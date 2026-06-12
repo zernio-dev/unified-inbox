@@ -2,19 +2,15 @@
 
 import { PlatformIcon } from '@/components/platform-icon';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { formatPhonePretty, formatRelativeTime, initials } from '@/lib/format';
+import {
+  conversationDisplayName,
+  formatPhonePretty,
+  formatRelativeTime,
+  initials,
+} from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Conversation } from '@/lib/types';
 import { isVerifiedType, XVerifiedBadge } from './verified-badge';
-
-function displayName(conv: Conversation): string {
-  if (conv.participantName) return conv.participantName;
-  if (conv.participantUsername) return conv.participantUsername;
-  if (conv.platform === 'whatsapp' && conv.participantId) {
-    return formatPhonePretty(`+${conv.participantId}`);
-  }
-  return 'Conversation';
-}
 
 export function ConversationRow({
   conversation,
@@ -28,7 +24,7 @@ export function ConversationRow({
   allAccountsMode: boolean;
   onSelect: (conv: Conversation) => void;
 }) {
-  const name = displayName(conversation);
+  const name = conversationDisplayName(conversation);
   const unread = Boolean(conversation.unreadCount);
 
   // CONTACT id (their phone or handle): useful when names are ambiguous or

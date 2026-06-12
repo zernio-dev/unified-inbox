@@ -1,4 +1,4 @@
-import type { Message, Platform } from './types';
+import type { Conversation, Message, Platform } from './types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const STUB_MATCH_WINDOW_MS = 120_000;
@@ -43,3 +43,28 @@ export function suppressDeliveredStubs(pending: Message[], server: Message[]): M
 }
 
 export const isOptimisticId = (id: string) => id.startsWith('temp-') || id.startsWith('new_');
+
+/**
+ * Outgoing optimistic stub appended to the thread while the POST is in
+ * flight. The 'temp-' id keeps it out of server-id space (see isOptimisticId)
+ * and `suppressDeliveredStubs` drops it once the server echo arrives.
+ */
+export function makeOptimisticMessage({
+  conversation,
+  overrides,
+}: {
+  conversation: Pick<Conversation, 'id' | 'accountId' | 'platform'>;
+  overrides?: Partial<Message>;
+}): Message {
+  return {
+    id: `temp-${Date.now()}`,
+    conversationId: conversation.id,
+    accountId: conversation.accountId,
+    platform: conversation.platform,
+    message: '',
+    direction: 'outgoing',
+    createdAt: new Date().toISOString(),
+    deliveryStatus: 'sent',
+    ...overrides,
+  };
+}

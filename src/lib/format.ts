@@ -1,4 +1,4 @@
-import type { Message } from './types';
+import type { Conversation, Message } from './types';
 
 const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -62,6 +62,16 @@ export function dateSeparatorLabel(date: Date, now: Date = new Date()): string {
     day: 'numeric',
     ...(differentYear ? { year: 'numeric' } : {}),
   });
+}
+
+/** Best display name for a conversation row / thread header. */
+export function conversationDisplayName(conv: Conversation): string {
+  if (conv.participantName) return conv.participantName;
+  if (conv.participantUsername) return conv.participantUsername;
+  if (conv.platform === 'whatsapp' && conv.participantId) {
+    return formatPhonePretty(`+${conv.participantId}`);
+  }
+  return 'Conversation';
 }
 
 export function initials(name?: string): string {

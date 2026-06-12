@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isOptimisticId, isWhatsAppOutside24h, suppressDeliveredStubs } from '../optimistic';
+import {
+  isOptimisticId,
+  isWhatsAppOutside24h,
+  makeOptimisticMessage,
+  suppressDeliveredStubs,
+} from '../optimistic';
 import type { Message } from '../types';
 
 const NOW = new Date('2026-03-12T12:00:00Z').getTime();
@@ -139,5 +144,31 @@ describe('isOptimisticId', () => {
   it('false otherwise', () => {
     expect(isOptimisticId('mid_temp-123')).toBe(false);
     expect(isOptimisticId('64f0c0ffee')).toBe(false);
+  });
+});
+
+describe('makeOptimisticMessage', () => {
+  const conversation = { id: 'c1', accountId: 'a1', platform: 'whatsapp' as const };
+
+  it('builds an outgoing stub scoped to the conversation with an optimistic id', () => {
+    const stub = makeOptimisticMessage({ conversation, overrides: { message: 'hi' } });
+    expect(isOptimisticId(stub.id)).toBe(true);
+    expect(stub).toMatchObject({
+      conversationId: 'c1',
+      accountId: 'a1',
+      platform: 'whatsapp',
+      message: 'hi',
+      direction: 'outgoing',
+      deliveryStatus: 'sent',
+    });
+    expect(Number.isNaN(new Date(stub.createdAt).getTime())).toBe(false);
+  });
+
+  it('lets overrides win (e.g. quoted-reply metadata)', () => {
+    const stub = makeOptimisticMessage({
+      conversation,
+      overrides: { message: 'hi', metadata: { quotedMessageId: 'm9' } },
+    });
+    expect(stub.metadata).toEqual({ quotedMessageId: 'm9' });
   });
 });
