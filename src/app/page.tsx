@@ -53,6 +53,7 @@ export default function Home() {
   // is only known after the user clicks a list row (or task 6's list resolves it).
   const selected = useMemo(() => parseSelection(filters.conversation), [filters.conversation]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [newMessageOpen, setNewMessageOpen] = useState(false);
 
   // First run: accounts exist but none tracked yet, send the user to settings.
   useEffect(() => {
@@ -88,6 +89,7 @@ export default function Home() {
               setFilter('conversation', `${s.accountId}:${s.conversationId}`);
             }}
             accounts={accounts}
+            onNewMessage={() => setNewMessageOpen(true)}
           />
           <ThreadPane
             selected={hydrated ? selected : null}
@@ -97,6 +99,8 @@ export default function Home() {
           />
         </div>
       )}
+      {/* New-message dialog mounts here in a later task (Task 9). */}
+      {newMessageOpen && null}
     </div>
   );
 }
