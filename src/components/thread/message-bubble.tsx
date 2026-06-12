@@ -1,7 +1,9 @@
 'use client';
 
-import { MapPin, Pencil, Reply, Trash2, User } from 'lucide-react';
+import { useState } from 'react';
+import { MapPin, Pencil, Reply, SmilePlus, Trash2, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { QUICK_REACTIONS, supportsDelete, supportsEdit, supportsReactions, supportsReply } from '@/lib/capabilities';
 import { messagePreviewText } from '@/lib/format';
 import {
@@ -33,6 +35,95 @@ export interface MessageBubbleProps {
   onDelete: (msg: Message) => void;
 }
 
+/** Quick-reaction emoji + contextual action buttons, shared by the inline (sm+) and popover (<sm) toolbars. */
+function MessageActionButtons({
+  msg,
+  canReact,
+  canReply,
+  canEdit,
+  canDelete,
+  onReact,
+  onReply,
+  onEdit,
+  onDelete,
+  onAction,
+}: {
+  msg: Message;
+  canReact: boolean;
+  canReply: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  onReact: (msg: Message, emoji: string) => void;
+  onReply: (msg: Message) => void;
+  onEdit: (msg: Message) => void;
+  onDelete: (msg: Message) => void;
+  /** Called after any action is selected (used to close the mobile popover). */
+  onAction?: () => void;
+}) {
+  return (
+    <>
+      {canReact &&
+        QUICK_REACTIONS.map((emoji) => (
+          <button
+            key={emoji}
+            type="button"
+            onClick={() => {
+              onReact(msg, emoji);
+              onAction?.();
+            }}
+            title={`React ${emoji}`}
+            aria-label={`React ${emoji}`}
+            className="px-0.5 text-base leading-none transition-transform hover:scale-125"
+          >
+            {emoji}
+          </button>
+        ))}
+      {canReply && (
+        <button
+          type="button"
+          onClick={() => {
+            onReply(msg);
+            onAction?.();
+          }}
+          title="Reply"
+          aria-label="Reply"
+          className="p-1 text-muted-foreground hover:text-foreground"
+        >
+          <Reply className="size-4" />
+        </button>
+      )}
+      {canEdit && (
+        <button
+          type="button"
+          onClick={() => {
+            onEdit(msg);
+            onAction?.();
+          }}
+          title="Edit"
+          aria-label="Edit message"
+          className="p-1 text-muted-foreground hover:text-foreground"
+        >
+          <Pencil className="size-4" />
+        </button>
+      )}
+      {canDelete && (
+        <button
+          type="button"
+          onClick={() => {
+            onDelete(msg);
+            onAction?.();
+          }}
+          title="Delete"
+          aria-label="Delete message"
+          className="p-1 text-muted-foreground hover:text-destructive"
+        >
+          <Trash2 className="size-4" />
+        </button>
+      )}
+    </>
+  );
+}
+
 export function MessageBubble({
   msg,
   conversation,
@@ -47,6 +138,7 @@ export function MessageBubble({
   const outgoing = msg.direction === 'outgoing';
   const platform = conversation.platform;
   const optimistic = isOptimisticId(msg.id);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
 
   const quotedId = getQuotedMessageId(msg.metadata);
   const quoted = quotedId ? messageById.get(quotedId) : undefined;
@@ -64,62 +156,58 @@ export function MessageBubble({
 
   return (
     <div className={cn('group flex items-center gap-1', outgoing ? 'justify-end' : 'justify-start')}>
-      {/* Hover toolbar flanks the bubble: left of outgoing, right of incoming.
-          Always visible on touch (no hover), revealed on hover from sm up. */}
+      {/* Toolbar flanks the bubble: left of outgoing, right of incoming.
+          From sm up: full row revealed on hover/focus. Below sm: a single
+          compact trigger opens the actions in a popover to avoid clutter. */}
       {hasToolbar && (
-        <div
-          className={cn(
-            'flex shrink-0 items-center gap-0.5 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100',
-            outgoing ? 'order-first' : 'order-last',
-          )}
-        >
-          {canReact &&
-            QUICK_REACTIONS.map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                onClick={() => onReact(msg, emoji)}
-                title={`React ${emoji}`}
-                aria-label={`React ${emoji}`}
-                className="px-0.5 text-base leading-none transition-transform hover:scale-125"
-              >
-                {emoji}
-              </button>
-            ))}
-          {canReply && (
-            <button
-              type="button"
-              onClick={() => onReply(msg)}
-              title="Reply"
-              aria-label="Reply"
-              className="p-1 text-muted-foreground hover:text-foreground"
-            >
-              <Reply className="size-4" />
-            </button>
-          )}
-          {canEdit && (
-            <button
-              type="button"
-              onClick={() => onEdit(msg)}
-              title="Edit"
-              aria-label="Edit message"
-              className="p-1 text-muted-foreground hover:text-foreground"
-            >
-              <Pencil className="size-4" />
-            </button>
-          )}
-          {canDelete && (
-            <button
-              type="button"
-              onClick={() => onDelete(msg)}
-              title="Delete"
-              aria-label="Delete message"
-              className="p-1 text-muted-foreground hover:text-destructive"
-            >
-              <Trash2 className="size-4" />
-            </button>
-          )}
-        </div>
+        <>
+          <div
+            className={cn(
+              'hidden shrink-0 items-center gap-0.5 transition-opacity sm:flex sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100',
+              outgoing ? 'order-first' : 'order-last',
+            )}
+          >
+            <MessageActionButtons
+              msg={msg}
+              canReact={canReact}
+              canReply={canReply}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              onReact={onReact}
+              onReply={onReply}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
+          </div>
+          <div className={cn('flex shrink-0 items-center sm:hidden', outgoing ? 'order-first' : 'order-last')}>
+            <Popover open={mobileActionsOpen} onOpenChange={setMobileActionsOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  title="Message actions"
+                  aria-label="Message actions"
+                  className="p-1 text-muted-foreground hover:text-foreground"
+                >
+                  <SmilePlus className="size-4" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="flex w-auto items-center gap-0.5 p-1.5">
+                <MessageActionButtons
+                  msg={msg}
+                  canReact={canReact}
+                  canReply={canReply}
+                  canEdit={canEdit}
+                  canDelete={canDelete}
+                  onReact={onReact}
+                  onReply={onReply}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  onAction={() => setMobileActionsOpen(false)}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+        </>
       )}
 
       <div
