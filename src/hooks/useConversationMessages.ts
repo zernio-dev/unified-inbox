@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   apiFetch,
@@ -9,7 +9,7 @@ import {
   useRateLimitState,
   type ApiError,
 } from '@/lib/api-client';
-import { mergeMessages } from '@/lib/merge';
+import { mergeMessages, reconcilePatches, resolveLoadMoreCursor } from '@/lib/merge';
 import { queryKeys } from '@/lib/query-keys';
 import type { Message } from '@/lib/types';
 
@@ -90,22 +90,18 @@ export function useConversationMessages({
   // polling resumes) the moment the pause expires. See useConversations.
   useRateLimitState();
 
-  // Cursor for the first loadOlder, written by the head queryFn. A ref (not
-  // state): a head poll re-running must not re-render or clobber paging state.
-  const headCursorRef = useRef<string | null>(null);
-
+  // The head page keeps `nextCursor` + `hasMore` on the query data itself:
+  // loadOlder reads the cursor from there, so a head poll racing a loadOlder
+  // can never hand out a stale or clobbered cursor.
   const headQuery = useQuery({
     queryKey: headKey,
     enabled,
     refetchInterval: () => pollInterval(MESSAGES_POLL_INTERVAL_MS),
-    queryFn: async () => {
-      const page = await fetchMessagesPage({
+    queryFn: () =>
+      fetchMessagesPage({
         conversationId: conversationId!,
         accountId: accountId!,
-      });
-      headCursorRef.current = page.nextCursor;
-      return page;
-    },
+      }),
   });
 
   // Older pages (load-older), chronological and prepended. Never polled.
@@ -120,30 +116,17 @@ export function useConversationMessages({
   // Per-message optimistic field overrides (e.g. a reaction toggle).
   const [patches, setPatches] = useState<Record<string, Partial<Message>>>({});
 
-  // Drop patches once a fresh head reflects the same message; the poll is then
-  // the single source of truth for it. Pending stays: suppression handles it.
+  // Drop patches once a fresh head REFLECTS them (patched fields match); the
+  // poll is then the single source of truth. Pending stays: suppression
+  // handles it.
   useEffect(() => {
     const head = headQuery.data?.messages;
     if (!head) return;
-    setPatches((prev) => {
-      const ids = Object.keys(prev);
-      if (ids.length === 0) return prev;
-      const headIds = new Set(head.map((m) => m.id));
-      const next = { ...prev };
-      let changed = false;
-      for (const id of ids) {
-        if (headIds.has(id)) {
-          delete next[id];
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
+    setPatches((prev) => reconcilePatches({ patches: prev, head }));
   }, [headQuery.data]);
 
   // Clear all thread-local state. Called by the pane when switching threads.
   const resetThread = useCallback(() => {
-    headCursorRef.current = null;
     setOlder([]);
     setOlderCursor(null);
     setOlderHasMore(false);
@@ -160,7 +143,11 @@ export function useConversationMessages({
 
   const loadOlder = useCallback(async (): Promise<boolean> => {
     if (loadingOlder || !conversationId || !accountId) return false;
-    const cursor = olderInit ? olderCursor : headCursorRef.current;
+    const cursor = resolveLoadMoreCursor({
+      olderInit,
+      olderCursor,
+      headCursor: headQuery.data?.nextCursor ?? null,
+    });
     if (!cursor) return false;
     setLoadingOlder(true);
     try {
@@ -179,7 +166,7 @@ export function useConversationMessages({
     } finally {
       setLoadingOlder(false);
     }
-  }, [loadingOlder, conversationId, accountId, olderInit, olderCursor]);
+  }, [loadingOlder, conversationId, accountId, olderInit, olderCursor, headQuery.data?.nextCursor]);
 
   const addOptimistic = useCallback((m: Message) => {
     setPending((prev) => [...prev, m]);

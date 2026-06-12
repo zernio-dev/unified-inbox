@@ -12,3 +12,20 @@ export function resolveMediaUrl(att: Attachment): string | undefined {
   }
   return att.url;
 }
+
+/**
+ * Scheme allowlist for message-derived hrefs: only http(s) (including
+ * relative paths, which resolve to the page's scheme) may become a link.
+ * Blocks javascript:/data:/etc. smuggled in platform payloads.
+ */
+export function safeHref(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    // The base only matters for relative urls; absolute urls keep their own
+    // protocol. '.invalid' is reserved so it can never collide with a real host.
+    const { protocol } = new URL(url, 'https://relative.invalid');
+    return protocol === 'http:' || protocol === 'https:' ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, MessageSquare, Phone } from 'lucide-react';
+import { ArrowLeft, Loader2, MessageSquare, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import { CallDialpadDialog } from '@/components/call-dialpad-dialog';
 import { Composer } from '@/components/composer/composer';
@@ -29,6 +29,8 @@ export interface ThreadPaneProps {
   conversation: Conversation | null;
   account: Account | null;
   onBack: () => void;
+  /** Optimistic sidebar bump after a send; forwarded to the composer. */
+  patchConversation?: (id: string, patch: Partial<Conversation>) => void;
 }
 
 const HIGHLIGHT_MS = 2_000;
@@ -37,7 +39,13 @@ function errorToast(err: unknown, fallback: string) {
   toast.error(err instanceof ApiError ? err.message : fallback);
 }
 
-export function ThreadPane({ selected, conversation, account, onBack }: ThreadPaneProps) {
+export function ThreadPane({
+  selected,
+  conversation,
+  account,
+  onBack,
+  patchConversation,
+}: ThreadPaneProps) {
   const threadKey = selected ? `${selected.accountId}:${selected.conversationId}` : 'none';
 
   const {
@@ -175,14 +183,35 @@ export function ThreadPane({ selected, conversation, account, onBack }: ThreadPa
     return (
       <main
         className={cn(
-          'h-full flex-1 flex-col items-center justify-center gap-3 bg-[var(--chat-canvas)]',
+          'relative h-full flex-1 flex-col items-center justify-center gap-3 bg-[var(--chat-canvas)]',
           // Without a selection the list owns the mobile viewport; with a
           // selection but no resolved conversation yet, stay visible.
           selected ? 'flex' : 'hidden md:flex',
         )}
       >
-        <MessageSquare className="size-8 text-muted-foreground/50" />
-        <p className="text-sm text-muted-foreground">Select a conversation</p>
+        {selected ? (
+          <>
+            {/* Refresh-on-mobile lands here with the list hidden: the back
+                button keeps it from being a dead end while the list resolves
+                the URL selection. */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-2.5 left-2 md:hidden"
+              onClick={onBack}
+              aria-label="Back to conversations"
+            >
+              <ArrowLeft className="size-4" />
+            </Button>
+            <Loader2 className="size-6 animate-spin text-muted-foreground/50" />
+            <p className="text-sm text-muted-foreground">Loading conversation</p>
+          </>
+        ) : (
+          <>
+            <MessageSquare className="size-8 text-muted-foreground/50" />
+            <p className="text-sm text-muted-foreground">Select a conversation</p>
+          </>
+        )}
       </main>
     );
   }
@@ -250,6 +279,7 @@ export function ThreadPane({ selected, conversation, account, onBack }: ThreadPa
         addOptimistic={addOptimistic}
         removeOptimistic={removeOptimistic}
         refreshHead={refreshHead}
+        patchConversation={patchConversation}
         messages={messages}
         messagesLoading={isLoading}
       />

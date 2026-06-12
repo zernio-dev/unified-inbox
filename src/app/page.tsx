@@ -15,6 +15,7 @@ import { ThreadPane } from '@/components/thread/thread-pane';
 import { Button } from '@/components/ui/button';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
+import type { ApiError } from '@/lib/api-client';
 import type { Conversation, Selection } from '@/lib/types';
 
 /** URL param format: `${accountId}:${conversationId}` (account ids never contain ':'). */
@@ -55,6 +56,17 @@ export default function Home() {
   const selected = useMemo(() => parseSelection(filters.conversation), [filters.conversation]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [newMessageOpen, setNewMessageOpen] = useState(false);
+  // Conversations-list error that classifies to a full-screen state (the
+  // accounts call can succeed while the inbox add-on gate fires on the list).
+  const [listError, setListError] = useState<ApiError | null>(null);
+
+  // Deep link / refresh: the list resolves the URL selection to its
+  // Conversation object once loaded; never clobber an already-resolved one.
+  const handleResolveSelected = useCallback((conv: Conversation) => {
+    setSelectedConversation((prev) =>
+      prev === null || prev.id !== conv.id || prev.accountId !== conv.accountId ? conv : prev,
+    );
+  }, []);
 
   // The conversation list hook lives inside ConversationListPane; it hands its
   // imperative API up here so the new-message dialog can insert the freshly
@@ -72,9 +84,13 @@ export default function Home() {
     }
   }, [isLoading, error, accounts.length, selectedAccountIds.length, router]);
 
-  const errorScreen = classifyApiError(error);
+  // Full-screen states from either the accounts fetch or a reported list error.
+  const screenError = classifyApiError(error) ? error : classifyApiError(listError) ? listError : null;
+  const errorScreen = classifyApiError(screenError);
   if (errorScreen === 'setup') return <SetupScreen />;
-  if (errorScreen === 'addon') return <InboxAddonScreen trialAvailable={error?.trialAvailable} />;
+  if (errorScreen === 'addon') {
+    return <InboxAddonScreen trialAvailable={screenError?.trialAvailable} />;
+  }
 
   const account = selected ? (accounts.find((a) => a._id === selected.accountId) ?? null) : null;
   const conversation =
@@ -100,12 +116,15 @@ export default function Home() {
             accounts={accounts}
             onNewMessage={() => setNewMessageOpen(true)}
             registerListApi={registerListApi}
+            onResolveSelected={handleResolveSelected}
+            onClassifiedError={setListError}
           />
           <ThreadPane
             selected={hydrated ? selected : null}
             conversation={conversation}
             account={account}
             onBack={() => setFilter('conversation', '')}
+            patchConversation={(id, patch) => listApiRef.current?.patchConversation(id, patch)}
           />
         </div>
       )}

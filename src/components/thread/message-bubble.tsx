@@ -11,6 +11,7 @@ import {
   getQuotedMessageId,
   getWaInteractive,
 } from '@/lib/message-metadata';
+import { safeHref } from '@/lib/media';
 import { isOptimisticId } from '@/lib/optimistic';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message } from '@/lib/types';
@@ -79,6 +80,7 @@ export function MessageBubble({
                 type="button"
                 onClick={() => onReact(msg, emoji)}
                 title={`React ${emoji}`}
+                aria-label={`React ${emoji}`}
                 className="px-0.5 text-base leading-none transition-transform hover:scale-125"
               >
                 {emoji}
@@ -171,7 +173,9 @@ export function MessageBubble({
         {/* Location pin card (opens Google Maps). */}
         {location && (
           <a
-            href={`https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`}
+            href={safeHref(
+              `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${location.latitude},${location.longitude}`)}`,
+            )}
             target="_blank"
             rel="nofollow noopener noreferrer"
             className="mt-1 flex items-center gap-2 rounded-lg border border-foreground/15 bg-foreground/5 p-2 text-sm hover:opacity-90"

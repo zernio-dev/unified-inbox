@@ -85,6 +85,16 @@ describe('formatPhonePretty', () => {
   it('is deterministic', () => {
     expect(formatPhonePretty('+34666777888')).toBe(formatPhonePretty('+34666777888'));
   });
+
+  it('formats NANP numbers as +1 XXX XXX XXXX', () => {
+    expect(formatPhonePretty('+14155552671')).toBe('+1 415 555 2671');
+    expect(formatPhonePretty('14155552671')).toBe('+1 415 555 2671');
+    expect(formatPhonePretty('1 (415) 555-2671')).toBe('+1 415 555 2671');
+  });
+
+  it('keeps the generic 2-digit-cc grouping for non-11-digit numbers starting with 1', () => {
+    expect(formatPhonePretty('123456789012')).toBe('+12 345 678 901 2');
+  });
 });
 
 describe('dateSeparatorLabel', () => {

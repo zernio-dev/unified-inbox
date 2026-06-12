@@ -5,13 +5,15 @@ import { Inbox, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRateLimitState, type ApiError } from '@/lib/api-client';
 
-/** Map an accounts-fetch failure to the full-screen state it should render. */
+/**
+ * Map an API failure to the full-screen state it should render. The addon
+ * screen is gated on the stable code, not bare 403 (a 403 can also mean a
+ * permission/ownership problem that the generic error path should handle).
+ */
 export function classifyApiError(error: ApiError | null): 'setup' | 'addon' | null {
   if (!error) return null;
-  if ((error.status === 500 && error.code === 'missing_api_key') || error.status === 401) {
-    return 'setup';
-  }
-  if (error.status === 403) return 'addon';
+  if (error.code === 'INBOX_REQUIRED') return 'addon';
+  if (error.status === 401 || error.code === 'missing_api_key') return 'setup';
   return null;
 }
 
@@ -124,7 +126,7 @@ export function RateLimitBanner() {
       role="status"
       className="flex items-center justify-center gap-2 border-b border-[var(--chat-border)] bg-[var(--chat-warning-bg)] px-4 py-1.5 text-xs font-medium text-[var(--chat-warning-fg)]"
     >
-      Rate limited by the API — auto-refresh paused, resuming in {secondsLeft}s
+      Rate limited by the API. Auto-refresh paused, resuming in {secondsLeft}s
     </div>
   );
 }

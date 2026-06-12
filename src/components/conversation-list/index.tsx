@@ -8,7 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { classifyApiError } from '@/components/error-screens';
 import { useConversations } from '@/hooks/useConversations';
+import type { ApiError } from '@/lib/api-client';
 import { conversationKey } from '@/lib/merge';
 import { cn } from '@/lib/utils';
 import type { InboxFilters } from '@/hooks/useUrlFilters';
@@ -26,15 +28,24 @@ export interface ConversationListPaneProps {
   onNewMessage?: () => void;
   /**
    * Hands the list's imperative API up to the page so out-of-pane flows (the
-   * new-message dialog) can insert an optimistic conversation without
-   * restructuring where the list hook lives.
+   * new-message dialog, the composer's sidebar bump) can mutate the list
+   * without restructuring where the list hook lives.
    */
   registerListApi?: (api: ConversationListApi) => void;
+  /**
+   * Deep link / refresh restore: when `selected` points at a conversation the
+   * parent has no object for yet, this reports the matching row once the
+   * merged list contains it.
+   */
+  onResolveSelected?: (conv: Conversation) => void;
+  /** Reports a conversations-fetch error that classifies to a full-screen state. */
+  onClassifiedError?: (e: ApiError) => void;
 }
 
 export interface ConversationListApi {
   addConversation: (c: Conversation) => void;
   refresh: () => void;
+  patchConversation: (id: string, patch: Partial<Conversation>) => void;
 }
 
 function ListSkeleton() {
@@ -80,6 +91,8 @@ export function ConversationListPane({
   onSelect,
   onNewMessage,
   registerListApi,
+  onResolveSelected,
+  onClassifiedError,
 }: ConversationListPaneProps) {
   const {
     conversations,
@@ -100,8 +113,27 @@ export function ConversationListPane({
   });
 
   useEffect(() => {
-    registerListApi?.({ addConversation, refresh });
-  }, [registerListApi, addConversation, refresh]);
+    registerListApi?.({ addConversation, refresh, patchConversation });
+  }, [registerListApi, addConversation, refresh, patchConversation]);
+
+  // Deep link / refresh: the URL selection exists before any row click, so the
+  // parent has no Conversation object. Hand the matching row up once loaded.
+  useEffect(() => {
+    if (!selected || !onResolveSelected) return;
+    const match = conversations.find(
+      (c) =>
+        conversationKey(c) ===
+        conversationKey({ id: selected.conversationId, accountId: selected.accountId }),
+    );
+    if (match) onResolveSelected(match);
+  }, [selected, conversations, onResolveSelected]);
+
+  // A list error that classifies to a full-screen state (addon/setup) must
+  // take over the whole app, which only the parent can render.
+  useEffect(() => {
+    if (!error || !onClassifiedError) return;
+    if (classifyApiError(error)) onClassifiedError(error);
+  }, [error, onClassifiedError]);
 
   // "Auto-updating" affordance: the dot pulses while a background refetch of
   // any conversations page is in flight.

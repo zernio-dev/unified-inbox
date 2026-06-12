@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { conversationKey, mergeConversations, mergeMessages } from '../merge';
+import {
+  conversationKey,
+  mergeConversations,
+  mergeMessages,
+  reconcilePatches,
+  resolveLoadMoreCursor,
+} from '../merge';
 import type { Conversation, Message } from '../types';
 
 function conv(overrides: Partial<Conversation> & { id: string }): Conversation {
@@ -259,5 +265,79 @@ describe('mergeMessages', () => {
     });
     expect(out.find((m) => m.id === 'm1')?.deliveryStatus).toBe('read');
     expect(out.find((m) => m.id === 'temp-1')?.deliveryStatus).toBe('failed');
+  });
+});
+
+describe('resolveLoadMoreCursor', () => {
+  it('starts from the head cursor before older paging begins', () => {
+    expect(resolveLoadMoreCursor({ olderInit: false, olderCursor: null, headCursor: 'h1' })).toBe(
+      'h1',
+    );
+  });
+
+  it('uses only the older chain once initialized, even when the head cursor moved', () => {
+    // A head poll landing mid-pagination must not clobber the older chain.
+    expect(
+      resolveLoadMoreCursor({ olderInit: true, olderCursor: 'o2', headCursor: 'h-fresh' }),
+    ).toBe('o2');
+  });
+
+  it('returns null at the end of the older chain regardless of the head cursor', () => {
+    expect(
+      resolveLoadMoreCursor({ olderInit: true, olderCursor: null, headCursor: 'h-fresh' }),
+    ).toBeNull();
+  });
+
+  it('returns null when nothing has a cursor', () => {
+    expect(resolveLoadMoreCursor({ olderInit: false, olderCursor: null, headCursor: null })).toBeNull();
+  });
+});
+
+describe('reconcilePatches', () => {
+  it('keeps a patch when the head row does not reflect it yet', () => {
+    const patches = { m1: { deliveryStatus: 'read' } as Partial<Message> };
+    const out = reconcilePatches({
+      patches,
+      head: [msg({ id: 'm1', deliveryStatus: 'sent' })],
+    });
+    expect(out).toBe(patches); // unchanged, same reference
+  });
+
+  it('drops a patch once every patched field deep-equals the head row', () => {
+    const out = reconcilePatches({
+      patches: { m1: { deliveryStatus: 'read' } as Partial<Message> },
+      head: [msg({ id: 'm1', deliveryStatus: 'read' })],
+    });
+    expect(out).toEqual({});
+  });
+
+  it('requires ALL patched fields to be reflected', () => {
+    const patches = {
+      c1: { unreadCount: 0, lastMessage: 'optimistic' } as Partial<Conversation>,
+    };
+    const out = reconcilePatches({
+      patches,
+      head: [conv({ id: 'c1', unreadCount: 0, lastMessage: 'stale server copy' })],
+    });
+    expect(out).toBe(patches);
+  });
+
+  it('compares nested values structurally', () => {
+    const reactions = [{ emoji: '👍', fromMe: true }];
+    const out = reconcilePatches({
+      patches: { m1: { reactions } as Partial<Message> },
+      head: [msg({ id: 'm1', reactions: [{ emoji: '👍', fromMe: true }] })],
+    });
+    expect(out).toEqual({});
+  });
+
+  it('keeps patches for rows absent from the head', () => {
+    const patches = { ghost: { lastMessage: 'bump' } as Partial<Conversation> };
+    expect(reconcilePatches({ patches, head: [conv({ id: 'c1' })] })).toBe(patches);
+  });
+
+  it('returns the same reference when there are no patches', () => {
+    const patches = {};
+    expect(reconcilePatches<Message>({ patches, head: [msg({ id: 'm1' })] })).toBe(patches);
   });
 });

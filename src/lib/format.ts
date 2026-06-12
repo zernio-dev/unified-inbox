@@ -39,12 +39,17 @@ export function messagePreviewText(m: Pick<Message, 'message' | 'attachments'>):
 
 /**
  * Best-effort phone formatter: '+' + digits, space after a 2-digit country
- * code guess, then groups of 3. Deterministic, no external lib.
- * '+34666777888' -> '+34 666 777 888'
+ * code guess, then groups of 3. NANP numbers (11 digits starting with 1) get
+ * the conventional +1 XXX XXX XXXX. Deterministic, no external lib.
+ * '+34666777888' -> '+34 666 777 888', '+14155552671' -> '+1 415 555 2671'
  */
 export function formatPhonePretty(input: string): string {
   const digits = (input || '').replace(/\D/g, '');
   if (!digits) return input;
+  // NANP: country code is the single digit '1', then 3-3-4 grouping.
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `+1 ${digits.slice(1, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
+  }
   const cc = digits.slice(0, 2);
   const rest = digits.slice(2);
   const groups = rest.match(/.{1,3}/g) ?? [];

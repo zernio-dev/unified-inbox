@@ -9,7 +9,13 @@ import {
   useRateLimitState,
   type ApiError,
 } from '@/lib/api-client';
-import { conversationKey, mergeConversations, type ConversationSortKey } from '@/lib/merge';
+import {
+  conversationKey,
+  mergeConversations,
+  reconcilePatches,
+  resolveLoadMoreCursor,
+  type ConversationSortKey,
+} from '@/lib/merge';
 import { queryKeys } from '@/lib/query-keys';
 import type { Conversation } from '@/lib/types';
 
@@ -123,25 +129,13 @@ export function useConversations(filters: ConversationFilters): {
     setPatches({});
   }, [filterKey]);
 
-  // Once a fresh head reflects a conversation, the server is authoritative for
-  // it: drop its patch and any pending copy.
+  // Drop a patch only once a fresh head REFLECTS it (patched fields match);
+  // the server is then authoritative for that row. Pending copies drop on
+  // plain id presence: the server surfacing the thread at all is enough.
   useEffect(() => {
     const head = headQuery.data?.conversations;
     if (!head) return;
-    setPatches((prev) => {
-      const ids = Object.keys(prev);
-      if (ids.length === 0) return prev;
-      const headIds = new Set(head.map((c) => c.id));
-      const next = { ...prev };
-      let changed = false;
-      for (const id of ids) {
-        if (headIds.has(id)) {
-          delete next[id];
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
+    setPatches((prev) => reconcilePatches({ patches: prev, head }));
     setPending((prev) => {
       if (prev.length === 0) return prev;
       const headKeys = new Set(head.map(conversationKey));
@@ -158,7 +152,11 @@ export function useConversations(filters: ConversationFilters): {
 
   const loadMore = useCallback(async () => {
     if (loadingMore) return;
-    const cursor = olderInit ? olderCursor : (headQuery.data?.nextCursor ?? null);
+    const cursor = resolveLoadMoreCursor({
+      olderInit,
+      olderCursor,
+      headCursor: headQuery.data?.nextCursor ?? null,
+    });
     if (!cursor) return;
     setLoadingMore(true);
     try {

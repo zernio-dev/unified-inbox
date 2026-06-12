@@ -11,6 +11,58 @@ export function conversationKey(c: Pick<Conversation, 'id' | 'accountId'>): stri
   return `${c.accountId || 'default'}-${c.id}`;
 }
 
+/**
+ * Cursor for the next load-older/load-more page: once older paging has
+ * started, only the older chain's cursor is valid; before that, start from the
+ * head page's cursor. Centralized so a head poll can never clobber an
+ * in-progress paging chain (both list and thread hooks use this).
+ */
+export function resolveLoadMoreCursor({
+  olderInit,
+  olderCursor,
+  headCursor,
+}: {
+  olderInit: boolean;
+  olderCursor: string | null;
+  headCursor: string | null;
+}): string | null {
+  return olderInit ? olderCursor : headCursor;
+}
+
+/**
+ * Drop optimistic patches only once the server head row REFLECTS them: every
+ * patched field must deep-equal the patch's value on the head row. A head row
+ * merely containing the id is not enough (a poll racing a mutation would
+ * otherwise revert the optimistic state). Returns the same reference when
+ * nothing changed so setState bails.
+ */
+export function reconcilePatches<T extends { id: string }>({
+  patches,
+  head,
+}: {
+  patches: Record<string, Partial<T>>;
+  head: T[];
+}): Record<string, Partial<T>> {
+  const ids = Object.keys(patches);
+  if (ids.length === 0) return patches;
+  const headById = new Map(head.map((row) => [row.id, row]));
+  const next = { ...patches };
+  let changed = false;
+  for (const id of ids) {
+    const row = headById.get(id);
+    if (!row) continue;
+    const patch = patches[id] as Record<string, unknown>;
+    const reflected = Object.keys(patch).every(
+      (key) => JSON.stringify((row as Record<string, unknown>)[key]) === JSON.stringify(patch[key]),
+    );
+    if (reflected) {
+      delete next[id];
+      changed = true;
+    }
+  }
+  return changed ? next : patches;
+}
+
 const updatedAt = (c: Conversation) => new Date(c.updatedTime).getTime();
 const byNewest = (a: Conversation, b: Conversation) => updatedAt(b) - updatedAt(a);
 

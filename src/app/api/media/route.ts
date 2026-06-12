@@ -6,7 +6,21 @@ const TELEGRAM_FILE_URL = /^https:\/\/api\.telegram\.org\/file\//;
 export async function GET(req: Request) {
   if (!hasApiKey()) return missingKeyResponse();
 
-  const url = new URL(req.url).searchParams.get('url') ?? '';
+  // searchParams already decoded once; collapse any remaining encoded layers
+  // (stable point, max 3) so %2E%2E / double-encoding can't smuggle a
+  // traversal past the '..' check below. The decoded form is also what gets
+  // fetched, so check and fetch can't disagree.
+  let url = new URL(req.url).searchParams.get('url') ?? '';
+  for (let i = 0; i < 3; i++) {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(url);
+    } catch {
+      break; // malformed escape: keep the last good form
+    }
+    if (decoded === url) break;
+    url = decoded;
+  }
 
   let upstream: Response;
   if (WHATSAPP_MEDIA_PATH.test(url) && !url.includes('..')) {

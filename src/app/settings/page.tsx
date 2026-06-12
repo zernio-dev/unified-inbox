@@ -196,8 +196,11 @@ export default function SettingsPage() {
             )}
           </div>
 
-          <div className="mt-3 flex justify-end">
-            <Button onClick={save} disabled={!dirty || saveSettings.isPending}>
+          <div className="mt-3 flex items-center justify-end gap-3">
+            {!isLoading && accounts.length > 0 && selectedIds.length === 0 && (
+              <p className="text-xs text-muted-foreground">Select at least one account.</p>
+            )}
+            <Button onClick={save} disabled={!dirty || selectedIds.length === 0 || saveSettings.isPending}>
               {saveSettings.isPending ? 'Saving…' : 'Save'}
             </Button>
           </div>
@@ -214,7 +217,7 @@ export default function SettingsPage() {
         </section>
 
         <p className="mt-10 text-center text-xs text-muted-foreground">
-          unified-inbox is open source —{' '}
+          unified-inbox is open source:{' '}
           <a
             href="https://github.com/zernio-dev/unified-inbox"
             target="_blank"

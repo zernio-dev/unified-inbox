@@ -275,6 +275,11 @@ export function Composer({
     try {
       await request();
       await refreshHead();
+      // Deterministic stub removal: the head now contains the persisted
+      // message, so drop the stub explicitly (the text-matching suppression in
+      // merge stays as a safety net for other code paths, but template /
+      // location / contact sends don't reliably match on text).
+      removeOptimistic(stub.id);
       patchConversation?.(conversation.id, {
         lastMessage: preview,
         updatedTime: new Date().toISOString(),
@@ -307,8 +312,10 @@ export function Composer({
               attachments: [
                 {
                   id: `temp-att-${Date.now()}`,
+                  // Reuse the staged preview URL (no second object URL to
+                  // leak); it's revoked below only once the send succeeds.
                   type: attachmentKind(staged.file),
-                  url: URL.createObjectURL(staged.file),
+                  url: staged.previewUrl,
                 },
               ],
             }
@@ -319,11 +326,15 @@ export function Composer({
     setText('');
     resetHeight();
     onCancelReply();
-    clearAttachment();
+    // Hide the staged chip but do NOT revoke the preview URL: the stub still
+    // renders it, and a failed send restores the attachment instead of
+    // destroying it.
+    setAttachment(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
 
     // The guard above ensures at least one of message / staged is present.
     const preview = message ? `You: ${message}` : staged ? sentAttachmentLabel(staged.file) : '';
-    await runSend({
+    const ok = await runSend({
       stub,
       request: () => {
         if (staged) {
@@ -342,20 +353,26 @@ export function Composer({
       },
       preview,
       errorMessage: 'Failed to send message',
-      onError: () => setText(message),
+      onError: () => {
+        setText(message);
+        // Restore the staged attachment (unless the user already staged a new
+        // one mid-send); its preview URL was never revoked on this path.
+        if (staged && !attachmentRef.current) setAttachment(staged);
+      },
       setBusy: setSending,
     });
+    // Stub and chip are both gone now; the preview object URL has no consumer.
+    if (ok && staged) URL.revokeObjectURL(staged.previewUrl);
   };
 
   // Recorded voice note: multipart with voiceNote flag so the server
   // transcodes MediaRecorder output to a WhatsApp-native container.
   const sendVoiceNote = (file: File) => {
+    const stubUrl = URL.createObjectURL(file);
     const stub = makeOptimisticMessage({
       conversation,
       overrides: {
-        attachments: [
-          { id: `temp-att-${Date.now()}`, type: 'audio', url: URL.createObjectURL(file) },
-        ],
+        attachments: [{ id: `temp-att-${Date.now()}`, type: 'audio', url: stubUrl }],
       },
     });
     void runSend({
@@ -370,7 +387,8 @@ export function Composer({
       preview: 'Voice note',
       errorMessage: 'Failed to send voice note',
       setBusy: setSending,
-    });
+      // The stub is removed on both outcomes; its object URL has no consumer.
+    }).finally(() => URL.revokeObjectURL(stubUrl));
   };
 
   // Interactive message (buttons / list / CTA / flow / location request /
