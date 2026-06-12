@@ -1,17 +1,47 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useIsFetching } from '@tanstack/react-query';
-import { Inbox, Loader2, RotateCw, Search, SearchX, Settings, SquarePen, X } from 'lucide-react';
+import {
+  Bell,
+  BellOff,
+  Inbox,
+  Loader2,
+  RotateCw,
+  Search,
+  SearchX,
+  Settings,
+  SquarePen,
+  X,
+} from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { classifyApiError } from '@/components/error-screens';
 import { useConversations } from '@/hooks/useConversations';
 import type { ApiError } from '@/lib/api-client';
+import { conversationDisplayName } from '@/lib/format';
 import { conversationKey } from '@/lib/merge';
+import {
+  buildSnapshot,
+  diffForNotifications,
+  getNotificationPref,
+  getSoundPref,
+  playChime,
+  setNotificationPref,
+  setSoundPref,
+  type ConversationSnapshot,
+} from '@/lib/notifications';
 import { cn } from '@/lib/utils';
 import type { InboxFilters } from '@/hooks/useUrlFilters';
 import type { Account, Conversation, Selection } from '@/lib/types';
@@ -64,6 +94,60 @@ function ListSkeleton() {
         </li>
       ))}
     </ul>
+  );
+}
+
+// At most this many desktop notifications per poll; a backlog burst (e.g.
+// waking a laptop) should never flood the OS notification center.
+const NOTIFY_CAP_PER_POLL = 3;
+const NOTIFY_BODY_MAX = 120;
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function NotificationBell({
+  pref,
+  soundOn,
+  onEnable,
+  onDisable,
+  onSoundChange,
+}: {
+  pref: 'on' | 'off';
+  soundOn: boolean;
+  onEnable: () => void;
+  onDisable: () => void;
+  onSoundChange: (on: boolean) => void;
+}) {
+  if (pref === 'off') {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" onClick={onEnable} aria-label="Enable notifications">
+            <BellOff className="size-4 text-muted-foreground" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Enable notifications</TooltipContent>
+      </Tooltip>
+    );
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Notification settings">
+          <Bell className="size-4 text-primary" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={onDisable}>
+          <BellOff className="size-4" />
+          Disable notifications
+        </DropdownMenuItem>
+        <DropdownMenuCheckboxItem checked={soundOn} onCheckedChange={onSoundChange}>
+          Sound
+        </DropdownMenuCheckboxItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -139,6 +223,88 @@ export function ConversationListPane({
   // any conversations page is in flight.
   const refetching = useIsFetching({ queryKey: ['conversations'] }) > 0;
 
+  // --- Browser notifications ---
+  // Prefs are read in an effect (not at render) so SSR and the first client
+  // render agree; until then the bell stays hidden/off.
+  const [notifSupported, setNotifSupported] = useState(false);
+  const [notifPref, setNotifPrefState] = useState<'on' | 'off'>('off');
+  const [soundOn, setSoundOnState] = useState(true);
+  useEffect(() => {
+    setNotifSupported('Notification' in window);
+    setNotifPrefState(getNotificationPref());
+    setSoundOnState(getSoundPref());
+  }, []);
+
+  const enableNotifications = useCallback(async () => {
+    if (Notification.permission === 'denied') {
+      toast.error('Notifications are blocked in your browser settings');
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      setNotificationPref('on');
+      setNotifPrefState('on');
+      toast.success('Notifications enabled');
+    }
+  }, []);
+
+  const disableNotifications = useCallback(() => {
+    setNotificationPref('off');
+    setNotifPrefState('off');
+  }, []);
+
+  const handleSoundChange = useCallback((on: boolean) => {
+    setSoundPref(on);
+    setSoundOnState(on);
+  }, []);
+
+  // Previous poll's snapshot. null means "re-initialize silently on the next
+  // poll": set on mount and whenever the filter scope changes, so cross-filter
+  // membership differences never read as a storm of new conversations.
+  const snapshotRef = useRef<Map<string, ConversationSnapshot> | null>(null);
+  const notifFilterKey = `${filters.platform}|${filters.account}`;
+  useEffect(() => {
+    snapshotRef.current = null;
+  }, [notifFilterKey]);
+
+  useEffect(() => {
+    // While the head page for the current filter loads, the merged list is
+    // empty; baselining on it would make every conversation look brand new.
+    if (isLoading) return;
+    const toNotify = diffForNotifications({
+      prev: snapshotRef.current,
+      conversations,
+      selectedKey: selected
+        ? conversationKey({ id: selected.conversationId, accountId: selected.accountId })
+        : null,
+      pageVisible: document.visibilityState === 'visible',
+    });
+    snapshotRef.current = buildSnapshot(conversations);
+    if (notifPref !== 'on') return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    let shown = 0;
+    for (const conv of toNotify.slice(0, NOTIFY_CAP_PER_POLL)) {
+      try {
+        const n = new Notification(conversationDisplayName(conv), {
+          body: truncate(conv.lastMessage ?? '', NOTIFY_BODY_MAX),
+          // Tag dedupes: a second message in the same thread replaces the
+          // earlier notification instead of stacking.
+          tag: `unified-inbox:${conversationKey(conv)}`,
+          silent: true, // we play our own (optional) chime instead
+        });
+        n.onclick = () => {
+          window.focus();
+          onSelect({ conversationId: conv.id, accountId: conv.accountId }, conv);
+        };
+        shown++;
+      } catch {
+        // The constructor can throw (e.g. Android Chrome requires a service
+        // worker); skip rather than break the poll loop.
+      }
+    }
+    if (shown > 0 && getSoundPref()) playChime();
+  }, [conversations, isLoading, selected, notifPref, onSelect]);
+
   const handleSelect = (conv: Conversation) => {
     markConversationRead({ conversation: conv, patchConversation });
     onSelect({ conversationId: conv.id, accountId: conv.accountId }, conv);
@@ -158,6 +324,15 @@ export function ConversationListPane({
             <Button variant="ghost" size="icon" onClick={onNewMessage} aria-label="New message">
               <SquarePen className="size-4" />
             </Button>
+          )}
+          {notifSupported && (
+            <NotificationBell
+              pref={notifPref}
+              soundOn={soundOn}
+              onEnable={() => void enableNotifications()}
+              onDisable={disableNotifications}
+              onSoundChange={handleSoundChange}
+            />
           )}
           <Button variant="ghost" size="icon" asChild aria-label="Settings">
             <Link href="/settings">
