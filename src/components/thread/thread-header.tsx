@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { ArrowLeft, ExternalLink } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Search } from 'lucide-react';
 import { PLATFORM_LABELS } from '@/components/platform-icon';
 import { isVerifiedType, XVerifiedBadge } from '@/components/conversation-list/verified-badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -17,10 +17,13 @@ import type { Conversation } from '@/lib/types';
 export function ThreadHeader({
   conversation,
   onBack,
+  onToggleSearch,
   actionsSlot,
 }: {
   conversation: Conversation;
   onBack: () => void;
+  /** Toggles the in-thread search bar (thread-pane owns the state). */
+  onToggleSearch?: () => void;
   /** Task 9 mounts the block-menu / call button here. */
   actionsSlot?: ReactNode;
 }) {
@@ -72,6 +75,17 @@ export function ThreadHeader({
         )}
       </div>
       <div className="flex flex-none items-center gap-1.5">
+        {onToggleSearch && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground"
+            onClick={onToggleSearch}
+            aria-label="Search in conversation"
+          >
+            <Search className="size-4" />
+          </Button>
+        )}
         {conversation.url && (
           <Button asChild variant="ghost" size="icon" className="text-muted-foreground">
             <a

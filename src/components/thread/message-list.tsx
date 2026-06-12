@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useLayoutEffect, useRef } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,7 +39,20 @@ export interface MessageListProps {
   highlightedMessageId: string | null;
   /** Flash-highlight a message (thread-pane owns the 2s timer). */
   onHighlight: (id: string) => void;
+  /**
+   * Hands the list's imperative bits up so out-of-list flows (in-thread
+   * search) reuse the exact quote-click scroll + highlight path and the
+   * position-preserving load-older. Mirrors registerListApi.
+   */
+  registerApi?: (api: MessageListApi) => void;
   bubbleHandlers: Pick<MessageBubbleProps, 'onReact' | 'onReply' | 'onEdit' | 'onDelete'>;
+}
+
+export interface MessageListApi {
+  /** Smooth-scroll to a message and flash the 2s highlight ring. */
+  scrollToMessage: (id: string) => void;
+  /** loadOlder with the reading-position restore (same path as the in-list button). */
+  loadOlder: () => Promise<void>;
 }
 
 export function MessageList({
@@ -53,6 +66,7 @@ export function MessageList({
   messageById,
   highlightedMessageId,
   onHighlight,
+  registerApi,
   bubbleHandlers,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -118,20 +132,28 @@ export function MessageList({
   // Snapshot scrollHeight BEFORE the fetch so the layout effect can restore
   // the reading position. The in-flight guard prevents a rapid double-click
   // from clobbering the snapshot with a post-first-prepend value.
-  const handleLoadOlder = async () => {
+  const handleLoadOlder = useCallback(async () => {
     if (loadingOlder) return;
     prevScrollHeightRef.current = containerRef.current?.scrollHeight ?? 0;
     await loadOlder();
-  };
+  }, [loadingOlder, loadOlder]);
 
-  // Jump to a quoted message (user action, so scrollIntoView is fine here).
-  const scrollToMessage = (id: string) => {
-    const el = containerRef.current?.querySelector(`[data-message-id="${CSS.escape(id)}"]`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      onHighlight(id);
-    }
-  };
+  // Jump to a message (user action, so scrollIntoView is fine here). Shared
+  // by quote clicks and, via registerApi, the in-thread search.
+  const scrollToMessage = useCallback(
+    (id: string) => {
+      const el = containerRef.current?.querySelector(`[data-message-id="${CSS.escape(id)}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        onHighlight(id);
+      }
+    },
+    [onHighlight],
+  );
+
+  useEffect(() => {
+    registerApi?.({ scrollToMessage, loadOlder: handleLoadOlder });
+  }, [registerApi, scrollToMessage, handleLoadOlder]);
 
   return (
     <div ref={containerRef} className="min-h-0 flex-1 overflow-y-auto">

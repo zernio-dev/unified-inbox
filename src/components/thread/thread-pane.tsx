@@ -18,11 +18,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { useConversationMessages } from '@/hooks/useConversationMessages';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toggleReaction } from '@/lib/reactions';
+import { searchMessageIds } from '@/lib/search';
 import { countryCodeFromE164, isBicBlocked } from '@/lib/whatsapp/calling';
 import { cn } from '@/lib/utils';
 import type { Account, Conversation, Message, Selection } from '@/lib/types';
-import { MessageList } from './message-list';
+import { MessageList, type MessageListApi } from './message-list';
 import { ThreadHeader } from './thread-header';
+import { ThreadSearch } from './thread-search';
 
 export interface ThreadPaneProps {
   selected: Selection | null;
@@ -71,6 +73,11 @@ export function ThreadPane({
   const [editText, setEditText] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  // Active match tracked by ID, not index: when loadOlder prepends new
+  // matches, the same message stays active while its index shifts.
+  const [activeMatchId, setActiveMatchId] = useState<string | null>(null);
 
   // Reset all thread-local state when the selected conversation changes.
   // useLayoutEffect so stale older/pending pages from the previous thread are
@@ -81,6 +88,9 @@ export function ThreadPane({
     setHighlightedMessageId(null);
     setEditing(null);
     setCallOpen(false);
+    setSearchOpen(false);
+    setSearchQuery('');
+    setActiveMatchId(null);
   }, [threadKey, resetThread]);
 
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -102,6 +112,64 @@ export function ThreadPane({
     for (const m of messages) map.set(m.id, m);
     return map;
   }, [messages]);
+
+  // --- In-thread search ---
+  // The message list registers its imperative bits (scroll-to-message with the
+  // quote-click highlight, position-preserving load-older) so search reuses
+  // those paths instead of duplicating them.
+  const listApiRef = useRef<MessageListApi | null>(null);
+  const registerListApi = useCallback((api: MessageListApi) => {
+    listApiRef.current = api;
+  }, []);
+
+  const matchIds = useMemo(
+    () => (searchOpen ? searchMessageIds({ messages, query: searchQuery }) : []),
+    [searchOpen, messages, searchQuery],
+  );
+  const activeMatchIndex = activeMatchId === null ? -1 : matchIds.indexOf(activeMatchId);
+
+  const goToMatch = useCallback((id: string) => {
+    setActiveMatchId(id);
+    listApiRef.current?.scrollToMessage(id);
+  }, []);
+
+  // Keep the active match valid as matches recompute (typing, polls,
+  // load-older). When it's stale or unset, snap to the newest match; an
+  // unchanged id is left alone so prepended pages don't move the cursor.
+  useEffect(() => {
+    if (!searchOpen) return;
+    if (matchIds.length === 0) {
+      setActiveMatchId(null);
+      return;
+    }
+    if (activeMatchId !== null && matchIds.includes(activeMatchId)) return;
+    goToMatch(matchIds[matchIds.length - 1]);
+  }, [searchOpen, matchIds, activeMatchId, goToMatch]);
+
+  // "Next" walks back in time from the newest match (chat-search convention),
+  // "previous" walks forward; both wrap around.
+  const goToNextMatch = useCallback(() => {
+    if (matchIds.length === 0) return;
+    const i = activeMatchId === null ? matchIds.length : matchIds.indexOf(activeMatchId);
+    goToMatch(matchIds[i <= 0 ? matchIds.length - 1 : i - 1]);
+  }, [matchIds, activeMatchId, goToMatch]);
+
+  const goToPrevMatch = useCallback(() => {
+    if (matchIds.length === 0) return;
+    const i = activeMatchId === null ? -1 : matchIds.indexOf(activeMatchId);
+    goToMatch(matchIds[i === -1 || i >= matchIds.length - 1 ? 0 : i + 1]);
+  }, [matchIds, activeMatchId, goToMatch]);
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setSearchQuery('');
+    setActiveMatchId(null);
+  }, []);
+
+  const toggleSearch = useCallback(() => {
+    if (searchOpen) closeSearch();
+    else setSearchOpen(true);
+  }, [searchOpen, closeSearch]);
 
   // Optimistic reaction toggle, reconciled by the head poll (the hook drops
   // the patch once a fresh head includes this message id).
@@ -231,6 +299,7 @@ export function ThreadPane({
       <ThreadHeader
         conversation={conversation}
         onBack={onBack}
+        onToggleSearch={toggleSearch}
         actionsSlot={
           isWhatsAppThread ? (
             <>
@@ -251,6 +320,20 @@ export function ThreadPane({
           ) : undefined
         }
       />
+      {searchOpen && (
+        <ThreadSearch
+          query={searchQuery}
+          onQueryChange={setSearchQuery}
+          matchCount={matchIds.length}
+          activePosition={activeMatchIndex === -1 ? null : matchIds.length - activeMatchIndex}
+          onNext={goToNextMatch}
+          onPrev={goToPrevMatch}
+          onClose={closeSearch}
+          hasMore={hasMore}
+          loadingOlder={loadingOlder}
+          onLoadOlder={() => void listApiRef.current?.loadOlder()}
+        />
+      )}
       <MessageList
         threadKey={threadKey}
         conversation={conversation}
@@ -262,6 +345,7 @@ export function ThreadPane({
         messageById={messageById}
         highlightedMessageId={highlightedMessageId}
         onHighlight={highlightMessage}
+        registerApi={registerListApi}
         bubbleHandlers={{
           onReact: handleReact,
           onReply: handleReply,
