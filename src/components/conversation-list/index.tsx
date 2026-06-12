@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { useIsFetching } from '@tanstack/react-query';
 import { Inbox, Loader2, RotateCw, Search, SearchX, Settings, SquarePen, X } from 'lucide-react';
@@ -23,6 +24,17 @@ export interface ConversationListPaneProps {
   onSelect: (s: Selection, conv: Conversation) => void;
   accounts: Account[];
   onNewMessage?: () => void;
+  /**
+   * Hands the list's imperative API up to the page so out-of-pane flows (the
+   * new-message dialog) can insert an optimistic conversation without
+   * restructuring where the list hook lives.
+   */
+  registerListApi?: (api: ConversationListApi) => void;
+}
+
+export interface ConversationListApi {
+  addConversation: (c: Conversation) => void;
+  refresh: () => void;
 }
 
 function ListSkeleton() {
@@ -67,6 +79,7 @@ export function ConversationListPane({
   selected,
   onSelect,
   onNewMessage,
+  registerListApi,
 }: ConversationListPaneProps) {
   const {
     conversations,
@@ -77,6 +90,7 @@ export function ConversationListPane({
     loadingMore,
     refresh,
     patchConversation,
+    addConversation,
     failedAccounts,
   } = useConversations({
     platform: filters.platform,
@@ -84,6 +98,10 @@ export function ConversationListPane({
     sortKey: filters.sort,
     search: filters.q,
   });
+
+  useEffect(() => {
+    registerListApi?.({ addConversation, refresh });
+  }, [registerListApi, addConversation, refresh]);
 
   // "Auto-updating" affordance: the dot pulses while a background refetch of
   // any conversations page is in flight.

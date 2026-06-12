@@ -1,15 +1,16 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Inbox } from 'lucide-react';
-import { ConversationListPane } from '@/components/conversation-list';
+import { ConversationListPane, type ConversationListApi } from '@/components/conversation-list';
 import {
   classifyApiError,
   InboxAddonScreen,
   RateLimitBanner,
   SetupScreen,
 } from '@/components/error-screens';
+import { NewMessageDialog } from '@/components/new-message-dialog';
 import { ThreadPane } from '@/components/thread/thread-pane';
 import { Button } from '@/components/ui/button';
 import { useAccounts } from '@/hooks/useAccounts';
@@ -55,6 +56,14 @@ export default function Home() {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [newMessageOpen, setNewMessageOpen] = useState(false);
 
+  // The conversation list hook lives inside ConversationListPane; it hands its
+  // imperative API up here so the new-message dialog can insert the freshly
+  // created thread optimistically.
+  const listApiRef = useRef<ConversationListApi | null>(null);
+  const registerListApi = useCallback((api: ConversationListApi) => {
+    listApiRef.current = api;
+  }, []);
+
   // First run: accounts exist but none tracked yet, send the user to settings.
   useEffect(() => {
     if (isLoading || error) return;
@@ -90,6 +99,7 @@ export default function Home() {
             }}
             accounts={accounts}
             onNewMessage={() => setNewMessageOpen(true)}
+            registerListApi={registerListApi}
           />
           <ThreadPane
             selected={hydrated ? selected : null}
@@ -99,8 +109,19 @@ export default function Home() {
           />
         </div>
       )}
-      {/* New-message dialog mounts here in a later task (Task 9). */}
-      {newMessageOpen && null}
+      <NewMessageDialog
+        open={newMessageOpen}
+        onOpenChange={setNewMessageOpen}
+        accounts={accounts}
+        onCreated={({ conversation }) => {
+          // The optimistic message is intentionally not injected into the
+          // thread: selecting the conversation loads messages from the server
+          // shortly (eventual consistency).
+          listApiRef.current?.addConversation(conversation);
+          setSelectedConversation(conversation);
+          setFilter('conversation', `${conversation.accountId}:${conversation.id}`);
+        }}
+      />
     </div>
   );
 }

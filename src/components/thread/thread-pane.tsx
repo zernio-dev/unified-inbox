@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, MessageSquare } from 'lucide-react';
+import { Loader2, MessageSquare, Phone } from 'lucide-react';
 import { toast } from 'sonner';
+import { CallDialpadDialog } from '@/components/call-dialpad-dialog';
 import { Composer } from '@/components/composer/composer';
+import { BlockMenu } from '@/components/thread/block-menu';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -16,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useConversationMessages } from '@/hooks/useConversationMessages';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toggleReaction } from '@/lib/reactions';
+import { countryCodeFromE164, isBicBlocked } from '@/lib/whatsapp/calling';
 import { cn } from '@/lib/utils';
 import type { Account, Conversation, Message, Selection } from '@/lib/types';
 import { MessageList } from './message-list';
@@ -59,6 +62,7 @@ export function ThreadPane({ selected, conversation, account, onBack }: ThreadPa
   const [editing, setEditing] = useState<Message | null>(null);
   const [editText, setEditText] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+  const [callOpen, setCallOpen] = useState(false);
 
   // Reset all thread-local state when the selected conversation changes.
   // useLayoutEffect so stale older/pending pages from the previous thread are
@@ -68,6 +72,7 @@ export function ThreadPane({ selected, conversation, account, onBack }: ThreadPa
     setReplyingTo(null);
     setHighlightedMessageId(null);
     setEditing(null);
+    setCallOpen(false);
   }, [threadKey, resetThread]);
 
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -182,9 +187,41 @@ export function ThreadPane({ selected, conversation, account, onBack }: ThreadPa
     );
   }
 
+  // WhatsApp-only header actions: block/unblock menu, plus the outbound
+  // calling dial pad when the feature flag is on and the BUSINESS number's
+  // country supports business-initiated calling (Meta blocks US/CA/EG/VN/NG;
+  // the business number is the WhatsApp account's username digits).
+  const isWhatsAppThread = conversation.platform === 'whatsapp' && !!conversation.participantId;
+  const canCall =
+    process.env.NEXT_PUBLIC_WHATSAPP_CALLING_ENABLED === 'true' &&
+    isWhatsAppThread &&
+    !isBicBlocked(countryCodeFromE164(account?.username ?? ''));
+
   return (
     <main className="flex h-full min-w-0 flex-1 flex-col bg-[var(--chat-canvas)]">
-      <ThreadHeader conversation={conversation} onBack={onBack} />
+      <ThreadHeader
+        conversation={conversation}
+        onBack={onBack}
+        actionsSlot={
+          isWhatsAppThread ? (
+            <>
+              {canCall && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground"
+                  onClick={() => setCallOpen(true)}
+                  title="Call this contact on WhatsApp"
+                  aria-label="Call this contact on WhatsApp"
+                >
+                  <Phone className="size-4" />
+                </Button>
+              )}
+              <BlockMenu conversation={conversation} />
+            </>
+          ) : undefined
+        }
+      />
       <MessageList
         threadKey={threadKey}
         conversation={conversation}
@@ -216,6 +253,16 @@ export function ThreadPane({ selected, conversation, account, onBack }: ThreadPa
         messages={messages}
         messagesLoading={isLoading}
       />
+
+      {/* WhatsApp Business Calling dial pad; mounted per open so its polling
+          and state reset cleanly on close. */}
+      {callOpen && canCall && conversation.participantId && (
+        <CallDialpadDialog
+          accountId={conversation.accountId}
+          initialTo={`+${conversation.participantId.replace(/^\+/, '')}`}
+          onClose={() => setCallOpen(false)}
+        />
+      )}
 
       {/* Telegram message edit */}
       <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
