@@ -66,6 +66,12 @@ export interface Conversation {
   metadata?: Record<string, unknown>;
 }
 
+/** A conversation selected in the UI; conversations are only unique per account. */
+export interface Selection {
+  conversationId: string;
+  accountId: string;
+}
+
 export interface Account {
   _id: string;
   platform: Platform;

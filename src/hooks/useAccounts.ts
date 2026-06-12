@@ -1,5 +1,6 @@
 'use client';
 
+import { useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, toApiError, type ApiError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
@@ -17,12 +18,19 @@ export function useAccounts(): {
   selectedAccountIds: string[];
   isLoading: boolean;
   error: ApiError | null;
-  refetch: () => void;
+  isFetching: boolean;
+  refetch: (opts?: { refresh?: boolean }) => void;
 } {
+  // One-shot flag: the next queryFn run bypasses the server-side accounts cache.
+  const forceRefreshRef = useRef(false);
   const query = useQuery({
     queryKey: queryKeys.accounts,
     staleTime: 60_000,
-    queryFn: () => apiFetch<AccountsResponse>('/api/accounts'),
+    queryFn: () => {
+      const refresh = forceRefreshRef.current;
+      forceRefreshRef.current = false;
+      return apiFetch<AccountsResponse>(refresh ? '/api/accounts?refresh=true' : '/api/accounts');
+    },
   });
 
   return {
@@ -31,7 +39,9 @@ export function useAccounts(): {
     selectedAccountIds: query.data?.selectedAccountIds ?? [],
     isLoading: query.isLoading,
     error: toApiError(query.error),
-    refetch: () => {
+    isFetching: query.isFetching,
+    refetch: (opts?: { refresh?: boolean }) => {
+      if (opts?.refresh) forceRefreshRef.current = true;
       void query.refetch();
     },
   };
