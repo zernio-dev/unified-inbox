@@ -29,7 +29,9 @@ export async function PUT(req: Request) {
     );
   }
 
-  const result = await fetchMessageAccounts();
+  // Always force-refresh: sanitizing against a stale account list could drop
+  // a freshly connected account the user just selected.
+  const result = await fetchMessageAccounts({ forceRefresh: true });
   if (result instanceof Response) return result;
 
   const live = new Set(result.accounts.map((a) => a._id));

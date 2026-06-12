@@ -5,14 +5,29 @@ import { passthrough, zernioFetch } from './zernio';
 export const SETTINGS_COOKIE_NAME = 'unified-inbox-settings';
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
+const ACCOUNTS_CACHE_TTL_MS = 60 * 1000;
+let cache: {
+  data: { accounts: Account[]; profiles: Profile[] };
+  expiresAt: number;
+} | null = null;
+
 /**
  * Fetch connected accounts (filtered to messaging platforms) + profiles.
  * On upstream failure returns the passthrough Response so 401/403 envelopes
  * reach the client intact; callers must check `instanceof Response`.
+ *
+ * Successful results are cached in-memory for 60s (this runs on every
+ * conversations poll, every 10s, and would otherwise burn rate-limit budget
+ * upstream). Error Responses are never cached. Pass `forceRefresh: true` to
+ * bypass the cache (settings page data paths, where staleness is user-visible).
  */
-export async function fetchMessageAccounts(): Promise<
-  { accounts: Account[]; profiles: Profile[] } | Response
-> {
+export async function fetchMessageAccounts(opts?: {
+  forceRefresh?: boolean;
+}): Promise<{ accounts: Account[]; profiles: Profile[] } | Response> {
+  if (!opts?.forceRefresh && cache && cache.expiresAt > Date.now()) {
+    return cache.data;
+  }
+
   const [accountsRes, profilesRes] = await Promise.all([
     zernioFetch('/v1/accounts'),
     zernioFetch('/v1/profiles'),
@@ -27,7 +42,9 @@ export async function fetchMessageAccounts(): Promise<
     (a) =>
       MESSAGE_PLATFORMS.includes(a.platform) && a.isActive !== false && a.enabled !== false,
   );
-  return { accounts, profiles: profilesBody.profiles ?? [] };
+  const data = { accounts, profiles: profilesBody.profiles ?? [] };
+  cache = { data, expiresAt: Date.now() + ACCOUNTS_CACHE_TTL_MS };
+  return data;
 }
 
 export function hasSettingsCookie(cookieHeader: string | null): boolean {
