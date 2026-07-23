@@ -90,3 +90,9 @@ Issues and PRs welcome. Keep it simple.
 ## License
 
 [MIT](LICENSE)
+
+<p align="center">
+  <a href="https://zernio.com">
+    <img src="https://zernio.com/brand/powered-by-zernio.svg" alt="Powered by Zernio" width="180">
+  </a>
+</p>
