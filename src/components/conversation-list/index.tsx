@@ -6,8 +6,10 @@ import { useIsFetching } from '@tanstack/react-query';
 import {
   Bell,
   BellOff,
+  ExternalLink,
   Inbox,
   Loader2,
+  Megaphone,
   RotateCw,
   Search,
   SearchX,
@@ -56,6 +58,8 @@ export interface ConversationListPaneProps {
   onSelect: (s: Selection, conv: Conversation) => void;
   accounts: Account[];
   onNewMessage?: () => void;
+  onNavigateView?: (view: 'chat' | 'campaigns') => void;
+  activeView?: 'chat' | 'campaigns';
   /**
    * Hands the list's imperative API up to the page so out-of-pane flows (the
    * new-message dialog, the composer's sidebar bump) can mutate the list
@@ -174,6 +178,8 @@ export function ConversationListPane({
   selected,
   onSelect,
   onNewMessage,
+  onNavigateView,
+  activeView = 'chat',
   registerListApi,
   onResolveSelected,
   onClassifiedError,
@@ -313,13 +319,30 @@ export function ConversationListPane({
   return (
     <aside
       className={cn(
-        'h-full w-full flex-col border-[var(--chat-border)] bg-[var(--chat-surface)] md:flex md:w-[24rem] md:flex-none md:border-r',
+        'h-full w-full flex-col border-[var(--chat-border)] bg-[var(--chat-surface)] md:flex md:w-80 lg:w-[24rem] md:flex-none md:border-r',
         selected ? 'hidden' : 'flex',
       )}
     >
       <header className="flex h-14 flex-none items-center border-b border-[var(--chat-border)] px-4">
-        <h1 className="text-base font-semibold tracking-tight">Inbox</h1>
+        <h1 className="text-base font-semibold tracking-tight">Chat</h1>
         <div className="ml-auto flex items-center gap-0.5">
+          {onNavigateView && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={activeView === 'campaigns' ? 'secondary' : 'ghost'}
+                  size="icon"
+                  onClick={() => onNavigateView(activeView === 'campaigns' ? 'chat' : 'campaigns')}
+                  aria-label="Campanhas"
+                >
+                  <Megaphone className="size-4 text-primary" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {activeView === 'campaigns' ? 'Voltar para o Chat' : 'Módulo de Campanhas'}
+              </TooltipContent>
+            </Tooltip>
+          )}
           {onNewMessage && (
             <Button variant="ghost" size="icon" onClick={onNewMessage} aria-label="New message">
               <SquarePen className="size-4" />
@@ -338,6 +361,15 @@ export function ConversationListPane({
             <Link href="/settings">
               <Settings className="size-4" />
             </Link>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => window.open(window.location.href, '_blank')}
+            aria-label="Abrir em nova aba"
+            title="Abrir em nova aba"
+          >
+            <ExternalLink className="size-4" />
           </Button>
           <Tooltip>
             <TooltipTrigger asChild>

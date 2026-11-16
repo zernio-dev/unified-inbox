@@ -12,6 +12,7 @@ import {
   SmilePlus,
   User,
   X,
+  Zap,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -28,11 +29,15 @@ import { isWhatsApp, supportsAttachments, supportsReply, supportsTyping } from '
 import { messagePreviewText } from '@/lib/format';
 import { isWhatsAppOutside24h, makeOptimisticMessage } from '@/lib/optimistic';
 import { useTemplateComposer } from '@/hooks/useTemplateComposer';
+import { useQuickReplies } from '@/hooks/useQuickReplies';
 import type { Account, Conversation, Message } from '@/lib/types';
 import { InteractiveDrawer, type InteractiveSendPayload } from './interactive-drawer';
 import { LocationContactDrawer, type ExtraMode, type ExtraSendPayload } from './location-contact-drawer';
 import { TemplateFields } from './template-fields';
 import { VoiceRecorder } from './voice-recorder';
+import { QuickRepliesPopover } from './quick-replies-popover';
+import { QuickRepliesDrawer } from './quick-replies-drawer';
+
 
 /**
  * Stable composer contract. Task 8 expands the internals (attachments, voice,
@@ -109,6 +114,9 @@ export function Composer({
   const [sendingExtra, setSendingExtra] = useState(false);
   const [sendingTemplate, setSendingTemplate] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [quickRepliesDrawerOpen, setQuickRepliesDrawerOpen] = useState(false);
+
+  const { quickReplies } = useQuickReplies('default');
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -129,6 +137,47 @@ export function Composer({
     accountId: conversation.accountId,
     enabled: outside24h,
   });
+
+  // Detect slash shortcut matching e.g. "/pix" or "/boas"
+  const slashMatch = text.match(/(^|\s)\/([a-zA-Z0-9_áàâãéèêíïóôõöúçñ-]*)$/i);
+  const filterQuery = slashMatch ? slashMatch[2] : '';
+  const showQuickRepliesPopover = Boolean(slashMatch) && !recordingVoice && !outside24h;
+
+  const handleSelectQuickReply = (reply: { shortcut: string; content: string }) => {
+    if (slashMatch) {
+      const matchStart = slashMatch.index ?? 0;
+      const leadingSpace = slashMatch[1];
+      const prefix = text.slice(0, matchStart) + leadingSpace;
+      setText(prefix + reply.content);
+    } else {
+      setText((prev) => (prev ? `${prev}\n${reply.content}` : reply.content));
+    }
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, MAX_TEXTAREA_HEIGHT_PX)}px`;
+      }
+    });
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          stageAttachment(file);
+          toast.success('Imagem colada da área de transferência');
+          break;
+        }
+      }
+    }
+  };
+
 
   // Revoke the staged preview URL on unmount (remove/replace/send revoke it
   // inline via clearAttachment/stageAttachment).
@@ -471,7 +520,18 @@ export function Composer({
   }
 
   return (
-    <footer className="flex-none space-y-2 border-t border-[var(--chat-border)] bg-[var(--chat-surface)] p-3">
+    <footer className="relative flex-none space-y-2 border-t border-[var(--chat-border)] bg-[var(--chat-surface)] p-3">
+      {/* Quick Replies Autocomplete Popover */}
+      {showQuickRepliesPopover && (
+        <QuickRepliesPopover
+          quickReplies={quickReplies}
+          filterQuery={filterQuery}
+          onSelect={handleSelectQuickReply}
+          onOpenManage={() => setQuickRepliesDrawerOpen(true)}
+          onClose={() => {}}
+        />
+      )}
+
       {/* Drop overlay: purely visual; the document-level listeners do the work. */}
       {dragging && (
         <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-background/80">
@@ -535,7 +595,7 @@ export function Composer({
         </div>
       )}
 
-      <div className="flex items-end gap-1 rounded-xl border border-[var(--chat-border)] bg-[var(--chat-input)] px-2 py-1.5">
+      <div className="flex w-full min-w-0 items-end gap-1 rounded-xl border border-[var(--chat-border)] bg-[var(--chat-input)] px-2 py-1.5">
         {canAttach && (
           <input
             ref={fileInputRef}
@@ -563,6 +623,7 @@ export function Composer({
               e.target.style.height = `${Math.min(e.target.scrollHeight, MAX_TEXTAREA_HEIGHT_PX)}px`;
               if (e.target.value.trim()) notifyTyping();
             }}
+            onPaste={handlePaste}
             onKeyDown={(e) => {
               // Enter sends; Shift+Enter inserts a newline (textarea default).
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -570,10 +631,23 @@ export function Composer({
                 void send();
               }
             }}
-            placeholder="Type a message..."
+            placeholder="Digite uma mensagem ou / atalho..."
             aria-label="Message"
-            className="max-h-36 min-h-0 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 text-base shadow-none field-sizing-fixed focus-visible:ring-0 sm:text-sm"
+            className="max-h-36 min-h-0 min-w-0 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 text-base shadow-none field-sizing-fixed focus-visible:ring-0 sm:text-sm"
           />
+        )}
+
+        {!recordingVoice && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setQuickRepliesDrawerOpen(true)}
+            title="Respostas Rápidas (⚡)"
+            aria-label="Respostas Rápidas"
+            className="size-8 shrink-0 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10"
+          >
+            <Zap className="size-4 text-amber-500" />
+          </Button>
         )}
 
         {!recordingVoice && (
@@ -691,6 +765,13 @@ export function Composer({
         sending={sendingExtra}
         onSend={(payload) => void sendExtra(payload)}
       />
+      <QuickRepliesDrawer
+        open={quickRepliesDrawerOpen}
+        onOpenChange={setQuickRepliesDrawerOpen}
+        onSelectReply={handleSelectQuickReply}
+        profileId="default"
+      />
     </footer>
+
   );
 }

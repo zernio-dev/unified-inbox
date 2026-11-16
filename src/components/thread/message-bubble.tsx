@@ -5,7 +5,7 @@ import { MapPin, Pencil, Reply, SmilePlus, Trash2, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { QUICK_REACTIONS, supportsDelete, supportsEdit, supportsReactions, supportsReply } from '@/lib/capabilities';
-import { messagePreviewText } from '@/lib/format';
+import { formatMessageText, messagePreviewText } from '@/lib/format';
 import {
   getContacts,
   getLocation,
@@ -252,9 +252,17 @@ export function MessageBubble({
           </div>
         )}
 
-        {msg.message && (
-          <p className="whitespace-pre-wrap break-words text-sm">{msg.message}</p>
-        )}
+        {(() => {
+          const formattedText = formatMessageText(msg.message);
+          const hasOtherContent =
+            (msg.attachments && msg.attachments.length > 0) ||
+            Boolean(waInteractive) ||
+            Boolean(location) ||
+            contacts.length > 0;
+          const textToRender = formattedText || (!hasOtherContent ? messagePreviewText(msg) : '');
+          if (!textToRender) return null;
+          return <p className="whitespace-pre-wrap break-words text-sm">{textToRender}</p>;
+        })()}
 
         {waInteractive && <InteractivePreview meta={waInteractive} />}
 

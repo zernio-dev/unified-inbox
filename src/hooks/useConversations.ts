@@ -19,8 +19,8 @@ import {
 import { queryKeys } from '@/lib/query-keys';
 import type { Conversation } from '@/lib/types';
 
-// Sidebar poll, slower than the open thread (5s): lower-signal, larger page.
-const CONVERSATIONS_POLL_INTERVAL_MS = 10_000;
+// Sidebar poll, slower than the open thread: lower-signal, larger page.
+const CONVERSATIONS_POLL_INTERVAL_MS = 20_000;
 const PAGE_LIMIT = 100;
 
 export interface ConversationFilters {

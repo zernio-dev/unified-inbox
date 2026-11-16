@@ -6,9 +6,15 @@ describe('resolveMediaUrl', () => {
     expect(resolveMediaUrl({ type: 'image' })).toBeUndefined();
   });
 
-  it('proxies WhatsApp media paths', () => {
+  it('proxies WhatsApp and Zernio media paths', () => {
     expect(resolveMediaUrl({ type: 'image', url: '/api/v1/whatsapp/media/abc123' })).toBe(
       `/api/media?url=${encodeURIComponent('/api/v1/whatsapp/media/abc123')}`,
+    );
+    expect(resolveMediaUrl({ type: 'audio', url: '/v1/whatsapp/media/abc123' })).toBe(
+      `/api/media?url=${encodeURIComponent('/v1/whatsapp/media/abc123')}`,
+    );
+    expect(resolveMediaUrl({ type: 'audio', url: '/v1/inbox/media/abc123' })).toBe(
+      `/api/media?url=${encodeURIComponent('/v1/inbox/media/abc123')}`,
     );
   });
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Inbox } from 'lucide-react';
 import { ConversationListPane, type ConversationListApi } from '@/components/conversation-list';
+import { CampaignsView } from '@/components/campaigns/campaigns-view';
 import {
   classifyApiError,
   InboxAddonScreen,
@@ -12,7 +13,6 @@ import {
 } from '@/components/error-screens';
 import { NewMessageDialog } from '@/components/new-message-dialog';
 import { ThreadPane } from '@/components/thread/thread-pane';
-import { Button } from '@/components/ui/button';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
 import type { ApiError } from '@/lib/api-client';
@@ -34,13 +34,8 @@ function NoAccountsScreen() {
           No messaging accounts connected
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Connect accounts in your Zernio dashboard first, then come back here.
+          Connect messaging accounts first, then come back here.
         </p>
-        <Button asChild className="mt-6">
-          <a href="https://zernio.com" target="_blank" rel="noreferrer">
-            Open Zernio dashboard
-          </a>
-        </Button>
       </div>
     </div>
   );
@@ -51,8 +46,20 @@ export default function Home() {
   const { accounts, selectedAccountIds, isLoading, error } = useAccounts();
   const { filters, setFilter, hydrated } = useUrlFilters();
 
+  // Sincroniza tenant_id da URL com o cookie para sessões multi-tenant
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tid = params.get('tenant_id');
+      if (tid) {
+        document.cookie = `tenant_id=${encodeURIComponent(tid)}; path=/; max-age=31536000; SameSite=Lax`;
+      }
+    }
+  }, []);
+
   // Selection lives in the URL (filters.conversation); the Conversation object
   // is only known after the user clicks a list row (or task 6's list resolves it).
+  const [activeView, setActiveView] = useState<'chat' | 'campaigns'>('chat');
   const selected = useMemo(() => parseSelection(filters.conversation), [filters.conversation]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [newMessageOpen, setNewMessageOpen] = useState(false);
@@ -112,20 +119,27 @@ export default function Home() {
             onSelect={(s, conv) => {
               setSelectedConversation(conv);
               setFilter('conversation', `${s.accountId}:${s.conversationId}`);
+              setActiveView('chat');
             }}
             accounts={accounts}
             onNewMessage={() => setNewMessageOpen(true)}
+            activeView={activeView}
+            onNavigateView={setActiveView}
             registerListApi={registerListApi}
             onResolveSelected={handleResolveSelected}
             onClassifiedError={setListError}
           />
-          <ThreadPane
-            selected={hydrated ? selected : null}
-            conversation={conversation}
-            account={account}
-            onBack={() => setFilter('conversation', '')}
-            patchConversation={(id, patch) => listApiRef.current?.patchConversation(id, patch)}
-          />
+          {activeView === 'campaigns' ? (
+            <CampaignsView />
+          ) : (
+            <ThreadPane
+              selected={hydrated ? selected : null}
+              conversation={conversation}
+              account={account}
+              onBack={() => setFilter('conversation', '')}
+              patchConversation={(id, patch) => listApiRef.current?.patchConversation(id, patch)}
+            />
+          )}
         </div>
       )}
       <NewMessageDialog

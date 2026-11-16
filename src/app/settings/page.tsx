@@ -86,6 +86,43 @@ export default function SettingsPage() {
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
+  const [customApiKey, setCustomApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [savingApiKey, setSavingApiKey] = useState(false);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const match = document.cookie.match(/zernio_api_key=([^;]+)/);
+      if (match) {
+        setCustomApiKey(decodeURIComponent(match[1]));
+      }
+      const params = new URLSearchParams(window.location.search);
+      const tid = params.get('tenant_id');
+      if (tid) {
+        document.cookie = `tenant_id=${encodeURIComponent(tid)}; path=/; max-age=31536000; SameSite=Lax`;
+      }
+    }
+  }, []);
+
+  const handleSaveApiKey = () => {
+    setSavingApiKey(true);
+    try {
+      const key = customApiKey.trim();
+      if (key) {
+        document.cookie = `zernio_api_key=${encodeURIComponent(key)}; path=/; max-age=31536000; SameSite=Lax`;
+        toast.success('Chave da Zernio salva! Atualizando contas...');
+        refetch({ refresh: true });
+      } else {
+        document.cookie = `zernio_api_key=; path=/; max-age=0; SameSite=Lax`;
+        toast.info('Chave removida. Usando chave padrão.');
+        refetch({ refresh: true });
+      }
+    } catch (err: any) {
+      toast.error('Erro ao salvar chave: ' + (err?.message || 'Falha'));
+    } finally {
+      setSavingApiKey(false);
+    }
+  };
 
   // Sync local selection from server data, but never clobber in-progress edits
   // (background refetches land while the user is toggling checkboxes).
@@ -164,16 +201,7 @@ export default function SettingsPage() {
               </div>
             ) : accounts.length === 0 ? (
               <p className="p-4 text-sm text-muted-foreground">
-                No messaging accounts connected. Connect accounts in your{' '}
-                <a
-                  href="https://zernio.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-medium text-primary underline-offset-4 hover:underline"
-                >
-                  Zernio dashboard
-                </a>{' '}
-                first.
+                No messaging accounts connected.
               </p>
             ) : (
               groups.map((group) => (
@@ -207,6 +235,49 @@ export default function SettingsPage() {
         </section>
 
         <section className="mt-8">
+          <div>
+            <h2 className="text-sm font-semibold">Chave de API Zernio (ZERNIO_API_KEY)</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Configure a chave da sua conta Zernio para carregar os canais deste usuário sem precisar configurar no Vercel.
+            </p>
+          </div>
+          <div className="mt-3 rounded-xl border border-[var(--chat-border)] bg-[var(--chat-surface)] p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                value={customApiKey}
+                onChange={(e) => setCustomApiKey(e.target.value)}
+                placeholder="sk_live_... ou sua chave Zernio"
+                className="flex-1 bg-[var(--chat-input)] border border-[var(--chat-border)] rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="text-xs h-9 px-3"
+                >
+                  {showApiKey ? 'Ocultar' : 'Exibir'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleSaveApiKey}
+                  disabled={savingApiKey}
+                  className="text-xs h-9 px-4"
+                >
+                  {savingApiKey ? 'Salvando...' : 'Salvar Chave'}
+                </Button>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Após salvar a chave, clique em <strong>Refresh</strong> em <em>Tracked accounts</em> acima para carregar seus canais.
+            </p>
+          </div>
+        </section>
+
+        <section className="mt-8">
           <h2 className="text-sm font-semibold">Theme</h2>
           <div className="mt-3 flex items-center justify-between rounded-xl border border-[var(--chat-border)] bg-[var(--chat-surface)] px-4 py-3">
             <p className="text-sm text-muted-foreground">
@@ -217,15 +288,7 @@ export default function SettingsPage() {
         </section>
 
         <p className="mt-10 text-center text-xs text-muted-foreground">
-          unified-inbox is open source:{' '}
-          <a
-            href="https://github.com/zernio-dev/unified-inbox"
-            target="_blank"
-            rel="noreferrer"
-            className="underline-offset-4 hover:underline"
-          >
-            github.com/zernio-dev/unified-inbox
-          </a>
+          HarmoStore Caixa de Entrada
         </p>
       </div>
     </div>

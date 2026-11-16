@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { Attachment } from '../types';
 import {
   getContacts,
   getLocation,
@@ -6,7 +7,83 @@ import {
   getQuotedMessageId,
   getWaInteractive,
   isCallEvent,
+  normalizeMessage,
 } from '../message-metadata';
+
+describe('normalizeMessage', () => {
+  it('extracts audio attachments from metadata when attachments is empty', () => {
+    const raw = {
+      id: 'm1',
+      conversationId: 'c1',
+      accountId: 'a1',
+      platform: 'whatsapp' as const,
+      message: '',
+      direction: 'incoming' as const,
+      createdAt: '2026-03-12T12:00:00Z',
+      metadata: {
+        messageType: 'audioMessage',
+        mediaUrl: '/v1/whatsapp/media/123',
+      },
+    };
+    const norm = normalizeMessage(raw);
+    expect(norm.attachments).toHaveLength(1);
+    expect(norm.attachments?.[0]).toEqual({ type: 'audio', url: '/v1/whatsapp/media/123' });
+  });
+
+  it('extracts image attachments from nested metadata objects', () => {
+    const raw = {
+      id: 'm2',
+      conversationId: 'c1',
+      accountId: 'a1',
+      platform: 'whatsapp' as const,
+      message: '',
+      direction: 'incoming' as const,
+      createdAt: '2026-03-12T12:00:00Z',
+      metadata: {
+        image: { url: '/v1/whatsapp/media/456' },
+      },
+    };
+    const norm = normalizeMessage(raw);
+    expect(norm.attachments?.[0]).toEqual({ type: 'image', url: '/v1/whatsapp/media/456' });
+  });
+
+  it('extracts voiceNote and audioMessage from metadata fields', () => {
+    const rawVoice = {
+      id: 'm-voice',
+      conversationId: 'c1',
+      accountId: 'a1',
+      platform: 'whatsapp' as const,
+      message: '',
+      direction: 'outgoing' as const,
+      createdAt: '2026-03-12T12:00:00Z',
+      metadata: {
+        voiceNote: { mediaUrl: 'https://s3.amazonaws.com/audio1.ogg' },
+      },
+    };
+    const normVoice = normalizeMessage(rawVoice);
+    expect(normVoice.attachments).toHaveLength(1);
+    expect(normVoice.attachments?.[0]).toEqual({ type: 'audio', url: 'https://s3.amazonaws.com/audio1.ogg' });
+  });
+
+  it('normalizes pre-existing attachment objects with mediaUrl and voice_note types', () => {
+    const rawExisting = {
+      id: 'm-existing',
+      conversationId: 'c1',
+      accountId: 'a1',
+      platform: 'whatsapp' as const,
+      message: '',
+      direction: 'outgoing' as const,
+      createdAt: '2026-03-12T12:00:00Z',
+      attachments: [
+        { type: 'voice_note', mediaUrl: 'https://s3.amazonaws.com/audio2.ogg' } as unknown as Attachment,
+      ],
+    };
+    const normExisting = normalizeMessage(rawExisting);
+    expect(normExisting.attachments).toHaveLength(1);
+    expect(normExisting.attachments?.[0].type).toBe('audio');
+    expect(normExisting.attachments?.[0].url).toBe('https://s3.amazonaws.com/audio2.ogg');
+  });
+});
 
 describe('isCallEvent', () => {
   it('true only for kind === "call"', () => {
