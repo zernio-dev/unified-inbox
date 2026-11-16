@@ -107,7 +107,7 @@ export async function resolveApiKey(req?: Request): Promise<string> {
           .eq('id', tenantId)
           .maybeSingle();
 
-        const s = (data?.settings as Record<string, any>) || {};
+        const s = (data?.settings as Record<string, unknown>) || {};
         if (s.zernio_api_key && typeof s.zernio_api_key === 'string' && s.zernio_api_key.trim()) {
           return s.zernio_api_key.trim();
         }
@@ -120,7 +120,7 @@ export async function resolveApiKey(req?: Request): Promise<string> {
   return (process.env.ZERNIO_API_KEY || '').trim();
 }
 
-export function hasApiKey(_req?: Request): boolean {
+export function hasApiKey(): boolean {
   return true;
 }
 

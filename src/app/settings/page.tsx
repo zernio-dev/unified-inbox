@@ -117,8 +117,9 @@ export default function SettingsPage() {
         toast.info('Chave removida. Usando chave padrão.');
         refetch({ refresh: true });
       }
-    } catch (err: any) {
-      toast.error('Erro ao salvar chave: ' + (err?.message || 'Falha'));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha';
+      toast.error('Erro ao salvar chave: ' + msg);
     } finally {
       setSavingApiKey(false);
     }
