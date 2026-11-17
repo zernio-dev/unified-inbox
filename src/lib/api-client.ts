@@ -56,8 +56,42 @@ function parseRetryAfter(res: Response): number | undefined {
   return undefined;
 }
 
+function getClientTenantId(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    const searchParams = new URLSearchParams(window.location.search);
+    const fromUrl = searchParams.get('tenant_id');
+    if (fromUrl) {
+      try {
+        localStorage.setItem('inbox_tenant_id', fromUrl);
+      } catch {}
+      return fromUrl;
+    }
+  } catch {}
+  try {
+    const fromStorage = localStorage.getItem('inbox_tenant_id');
+    if (fromStorage) return fromStorage;
+  } catch {}
+  const match = typeof document !== 'undefined' ? document.cookie.match(/(?:^|;\s*)(?:inbox_)?tenant_id=([^;]+)/) : null;
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, { cache: 'no-store', ...init });
+  let targetPath = path;
+  const tenantId = getClientTenantId();
+
+  const headers = new Headers(init?.headers || {});
+  if (tenantId) {
+    if (!headers.has('x-tenant-id')) {
+      headers.set('x-tenant-id', tenantId);
+    }
+    if (!targetPath.includes('tenant_id=')) {
+      const sep = targetPath.includes('?') ? '&' : '?';
+      targetPath = `${targetPath}${sep}tenant_id=${encodeURIComponent(tenantId)}`;
+    }
+  }
+
+  const res = await fetch(targetPath, { cache: 'no-store', ...init, headers });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as {
       error?: string;
@@ -65,7 +99,10 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       trialAvailable?: boolean;
     };
     const retryAfter = parseRetryAfter(res);
-    if (res.status === 429) notifyRateLimited(retryAfter ?? 30);
+    const isMediaRoute = path.includes('/api/media') || path.includes('/media/');
+    if (res.status === 429 && !isMediaRoute) {
+      notifyRateLimited(retryAfter ?? 30);
+    }
     throw new ApiError({
       message: body.error || res.statusText || 'Request failed',
       status: res.status,
@@ -133,7 +170,8 @@ export function useRateLimitState(): { pausedUntil: number; paused: boolean } {
   return { pausedUntil: until, paused: until > Date.now() };
 }
 
-/** For refetchInterval callbacks: suspend polling while rate-limit-paused. */
+/** For refetchInterval callbacks: suspend polling while rate-limit-paused or tab in background. */
 export function pollInterval(ms: number): number | false {
+  if (typeof document !== 'undefined' && document.hidden) return false;
   return isRatePaused() ? false : ms;
 }

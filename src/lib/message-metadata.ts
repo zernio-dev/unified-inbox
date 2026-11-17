@@ -1,3 +1,5 @@
+import type { Attachment, Message, MessageReaction } from './types';
+
 /**
  * Type-safe readers for Message.metadata (a Record<string, unknown> over the
  * wire). Every accessor validates shape at runtime so the renderers never
@@ -13,6 +15,142 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 function metaString(meta: Meta, key: string): string | undefined {
   const v = meta?.[key];
   return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+
+/** Normalize message objects from Zernio / WhatsApp APIs so attachments and reactions are guaranteed. */
+export function normalizeMessage(m: Message): Message {
+  if (!m) return m;
+  const norm = { ...m };
+  const meta = norm.metadata || {};
+
+  // 1. Normalize attachments if missing or empty, OR sanitize existing attachments
+  if (!norm.attachments || norm.attachments.length === 0) {
+    const extractedAttachments: Attachment[] = [];
+
+    const directUrl =
+      (typeof (norm as unknown as Record<string, unknown>).mediaUrl === 'string' && (norm as unknown as Record<string, unknown>).mediaUrl as string) ||
+      (typeof (norm as unknown as Record<string, unknown>).url === 'string' && (norm as unknown as Record<string, unknown>).url as string) ||
+      (typeof (norm as unknown as Record<string, unknown>).fileUrl === 'string' && (norm as unknown as Record<string, unknown>).fileUrl as string) ||
+      metaString(meta, 'mediaUrl') ||
+      metaString(meta, 'media_url') ||
+      metaString(meta, 'url') ||
+      metaString(meta, 'fileUrl') ||
+      metaString(meta, 'file_url') ||
+      metaString(meta, 'link');
+
+    const audioObj = isRecord(meta.audio)
+      ? meta.audio
+      : isRecord(meta.voice)
+      ? meta.voice
+      : isRecord(meta.ptt)
+      ? meta.ptt
+      : isRecord(meta.audioMessage)
+      ? meta.audioMessage
+      : isRecord(meta.voiceNote)
+      ? meta.voiceNote
+      : isRecord(meta.voice_note)
+      ? meta.voice_note
+      : isRecord(meta.voicenote)
+      ? meta.voicenote
+      : isRecord(meta.voice_message)
+      ? meta.voice_message
+      : undefined;
+
+    const imageObj = isRecord(meta.image) ? meta.image : isRecord(meta.photo) ? meta.photo : undefined;
+    const videoObj = isRecord(meta.video) ? meta.video : isRecord(meta.reel) ? meta.reel : undefined;
+    const docObj = isRecord(meta.document) ? meta.document : isRecord(meta.file) ? meta.file : undefined;
+    const stickerObj = isRecord(meta.sticker) ? meta.sticker : undefined;
+
+    const audioUrl =
+      metaString(audioObj, 'url') ||
+      metaString(audioObj, 'mediaUrl') ||
+      metaString(audioObj, 'media_url') ||
+      metaString(audioObj, 'fileUrl') ||
+      metaString(audioObj, 'link');
+
+    const imageUrl = metaString(imageObj, 'url') || metaString(imageObj, 'mediaUrl');
+    const videoUrl = metaString(videoObj, 'url') || metaString(videoObj, 'mediaUrl');
+    const docUrl = metaString(docObj, 'url') || metaString(docObj, 'mediaUrl');
+    const stickerUrl = metaString(stickerObj, 'url') || metaString(stickerObj, 'mediaUrl');
+
+    const msgType = (metaString(meta, 'messageType') || metaString(meta, 'type') || '').toLowerCase();
+
+    if (
+      audioUrl ||
+      msgType.includes('audio') ||
+      msgType.includes('voice') ||
+      msgType.includes('ptt') ||
+      msgType.includes('recording')
+    ) {
+      const url = audioUrl || directUrl;
+      if (url) extractedAttachments.push({ type: 'audio', url });
+    } else if (imageUrl || msgType.includes('image')) {
+      const url = imageUrl || directUrl;
+      if (url) extractedAttachments.push({ type: 'image', url });
+    } else if (videoUrl || msgType.includes('video')) {
+      const url = videoUrl || directUrl;
+      if (url) extractedAttachments.push({ type: 'video', url });
+    } else if (stickerUrl || msgType.includes('sticker')) {
+      const url = stickerUrl || directUrl;
+      if (url) extractedAttachments.push({ type: 'sticker', url });
+    } else if (docUrl || msgType.includes('document') || msgType.includes('file')) {
+      const url = docUrl || directUrl;
+      if (url) extractedAttachments.push({ type: 'file', url });
+    } else if (directUrl) {
+      extractedAttachments.push({ type: 'file', url: directUrl });
+    }
+
+    if (extractedAttachments.length > 0) {
+      norm.attachments = extractedAttachments;
+    }
+  } else {
+    // Sanitize pre-existing attachments array
+    norm.attachments = norm.attachments.map((att) => {
+      const copy = { ...att };
+      const rawUrl =
+        copy.url ||
+        (copy as unknown as Record<string, unknown>).mediaUrl as string ||
+        (copy as unknown as Record<string, unknown>).fileUrl as string ||
+        (copy as unknown as Record<string, unknown>).link as string;
+      if (!copy.url && rawUrl) {
+        copy.url = rawUrl;
+      }
+      const typeLower = (copy.type || '').toLowerCase();
+      if (
+        typeLower.includes('audio') ||
+        typeLower.includes('voice') ||
+        typeLower.includes('ptt') ||
+        typeLower.includes('recording')
+      ) {
+        copy.type = 'audio';
+      }
+      return copy;
+    });
+  }
+
+  // 2. Normalize reactions if missing
+  if (!norm.reactions || norm.reactions.length === 0) {
+    const rawReaction = meta.reaction || meta.reactions;
+    if (isRecord(rawReaction) && typeof rawReaction.emoji === 'string') {
+      norm.reactions = [
+        {
+          emoji: rawReaction.emoji,
+          fromMe: Boolean(rawReaction.fromMe),
+        },
+      ];
+    } else if (Array.isArray(rawReaction)) {
+      const list = rawReaction.flatMap((r): MessageReaction[] =>
+        isRecord(r) && typeof r.emoji === 'string'
+          ? [{ emoji: r.emoji, fromMe: Boolean(r.fromMe) }]
+          : [],
+      );
+      if (list.length > 0) {
+        norm.reactions = list;
+      }
+    }
+  }
+
+  return norm;
 }
 
 /** Call-event rows (WhatsApp call.received / call.ended) render as a system pill, not a bubble. */

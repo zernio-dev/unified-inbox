@@ -1,36 +1,45 @@
 import { MESSAGE_PLATFORMS } from '@/lib/capabilities';
 import type { Account, Profile } from '@/lib/types';
-import { passthrough, zernioFetch } from './zernio';
+import { passthrough, resolveApiKey, zernioFetch } from './zernio';
 
 export const SETTINGS_COOKIE_NAME = 'unified-inbox-settings';
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
 const ACCOUNTS_CACHE_TTL_MS = 60 * 1000;
-let cache: {
+const cacheByTenant = new Map<string, {
   data: { accounts: Account[]; profiles: Profile[] };
   expiresAt: number;
-} | null = null;
+}>();
 
 /**
  * Fetch connected accounts (filtered to messaging platforms) + profiles.
  * On upstream failure returns the passthrough Response so 401/403 envelopes
  * reach the client intact; callers must check `instanceof Response`.
  *
- * Successful results are cached in-memory for 60s (this runs on every
+ * Successful results are cached in-memory for 60s per tenant/key (this runs on every
  * conversations poll, every 10s, and would otherwise burn rate-limit budget
  * upstream). Error Responses are never cached. Pass `forceRefresh: true` to
  * bypass the cache (settings page data paths, where staleness is user-visible).
  */
 export async function fetchMessageAccounts(opts?: {
   forceRefresh?: boolean;
+  req?: Request;
 }): Promise<{ accounts: Account[]; profiles: Profile[] } | Response> {
-  if (!opts?.forceRefresh && cache && cache.expiresAt > Date.now()) {
-    return cache.data;
+  const apiKey = await resolveApiKey(opts?.req);
+  const cacheKey = apiKey || 'default';
+
+  if (!opts?.forceRefresh) {
+    const cached = cacheByTenant.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+  } else {
+    cacheByTenant.delete(cacheKey);
   }
 
   const [accountsRes, profilesRes] = await Promise.all([
-    zernioFetch('/v1/accounts'),
-    zernioFetch('/v1/profiles'),
+    zernioFetch('/v1/accounts', undefined, opts?.req),
+    zernioFetch('/v1/profiles', undefined, opts?.req),
   ]);
   if (!accountsRes.ok) return passthrough(accountsRes);
   if (!profilesRes.ok) return passthrough(profilesRes);
@@ -43,7 +52,7 @@ export async function fetchMessageAccounts(opts?: {
       MESSAGE_PLATFORMS.includes(a.platform) && a.isActive !== false && a.enabled !== false,
   );
   const data = { accounts, profiles: profilesBody.profiles ?? [] };
-  cache = { data, expiresAt: Date.now() + ACCOUNTS_CACHE_TTL_MS };
+  cacheByTenant.set(cacheKey, { data, expiresAt: Date.now() + ACCOUNTS_CACHE_TTL_MS });
   return data;
 }
 

@@ -1,16 +1,33 @@
 import type { Attachment } from './types';
 
-// Attachment URLs that require auth (WhatsApp media behind our API key) or
-// that browsers can't hotlink reliably (Telegram file CDN) are routed through
-// the server-side /api/media proxy. Everything else is loaded directly.
-const PROXIED_PREFIXES = ['/api/v1/whatsapp/media/', 'https://api.telegram.org/file/'];
+
+
+function extractUrl(att: Attachment): string | undefined {
+  if (att.url) return att.url;
+  const rawObj = att as unknown as Record<string, unknown>;
+  if (typeof rawObj.mediaUrl === 'string') return rawObj.mediaUrl;
+  if (typeof rawObj.fileUrl === 'string') return rawObj.fileUrl;
+  if (typeof rawObj.link === 'string') return rawObj.link;
+  if (att.payload && typeof att.payload.url === 'string') return att.payload.url;
+  return undefined;
+}
 
 export function resolveMediaUrl(att: Attachment): string | undefined {
-  if (!att.url) return undefined;
-  if (PROXIED_PREFIXES.some((prefix) => att.url!.startsWith(prefix))) {
-    return `/api/media?url=${encodeURIComponent(att.url)}`;
+  const rawUrl = extractUrl(att);
+  if (!rawUrl) return undefined;
+  if (rawUrl.startsWith('/api/media')) return rawUrl;
+
+  const needsProxy =
+    rawUrl.startsWith('/') ||
+    rawUrl.includes('/v1/') ||
+    rawUrl.includes('/whatsapp/media') ||
+    rawUrl.includes('/inbox/media') ||
+    rawUrl.includes('api.telegram.org/file/');
+
+  if (needsProxy) {
+    return `/api/media?url=${encodeURIComponent(rawUrl)}`;
   }
-  return att.url;
+  return rawUrl;
 }
 
 /**

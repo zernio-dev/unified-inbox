@@ -2,7 +2,6 @@
 
 import type { ReactNode } from 'react';
 import { ArrowLeft, ExternalLink, Search } from 'lucide-react';
-import { PLATFORM_LABELS } from '@/components/platform-icon';
 import { isVerifiedType, XVerifiedBadge } from '@/components/conversation-list/verified-badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -86,19 +85,16 @@ export function ThreadHeader({
             <Search className="size-4" />
           </Button>
         )}
-        {conversation.url && (
-          <Button asChild variant="ghost" size="icon" className="text-muted-foreground">
-            <a
-              href={conversation.url}
-              target="_blank"
-              rel="nofollow noopener noreferrer"
-              title={`Open in ${PLATFORM_LABELS[conversation.platform]}`}
-              aria-label={`Open in ${PLATFORM_LABELS[conversation.platform]}`}
-            >
-              <ExternalLink className="size-4" />
-            </a>
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground"
+          onClick={() => window.open(window.location.href, '_blank')}
+          title="Abrir em nova aba"
+          aria-label="Abrir em nova aba"
+        >
+          <ExternalLink className="size-4" />
+        </Button>
         {actionsSlot}
       </div>
     </header>

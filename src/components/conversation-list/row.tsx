@@ -4,6 +4,7 @@ import { PlatformIcon } from '@/components/platform-icon';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   conversationDisplayName,
+  formatMessageText,
   formatPhonePretty,
   formatRelativeTime,
   initials,
@@ -92,7 +93,7 @@ export function ConversationRow({
               unread ? 'font-medium text-foreground' : 'text-muted-foreground',
             )}
           >
-            {conversation.lastMessage}
+            {formatMessageText(conversation.lastMessage)}
           </span>
           {unread && <span className="ml-auto size-2 flex-none rounded-full bg-primary" />}
         </div>

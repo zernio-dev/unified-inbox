@@ -2,10 +2,20 @@ import type { Metadata, Viewport } from "next";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
+const LOGO_HARMO_URL = "https://storage.googleapis.com/gpt-engineer-file-uploads/GyY8YdQwvqSqDbwid2ztdoQxLER2/uploads/1770698837610-logo_harmo.jpg";
+
 export const metadata: Metadata = {
-  title: "Unified Inbox",
-  description:
-    "Open source unified inbox for WhatsApp, Instagram, Messenger, Telegram, X, Reddit, and Bluesky. Built on the Zernio API.",
+  title: "Caixa de Entrada",
+  description: "Caixa de entrada unificada de atendimento - Harmo Store",
+  icons: {
+    icon: [
+      { url: LOGO_HARMO_URL, type: "image/jpeg" },
+      { url: "/logo_harmo.jpg", type: "image/jpeg" },
+      { url: "/favicon.ico", type: "image/jpeg" },
+    ],
+    shortcut: LOGO_HARMO_URL,
+    apple: LOGO_HARMO_URL,
+  },
 };
 
 export const viewport: Viewport = {
@@ -33,8 +43,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="pt-BR" suppressHydrationWarning>
       <head>
+        <title>Caixa de Entrada</title>
+        <link rel="icon" type="image/jpeg" href={LOGO_HARMO_URL} />
+        <link rel="icon" type="image/jpeg" href="/logo_harmo.jpg" />
+        <link rel="icon" type="image/jpeg" href="/favicon.ico" />
+        <link rel="apple-touch-icon" href={LOGO_HARMO_URL} />
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body className="antialiased">

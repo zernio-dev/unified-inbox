@@ -10,11 +10,12 @@ import {
   type ApiError,
 } from '@/lib/api-client';
 import { mergeMessages, reconcilePatches, resolveLoadMoreCursor } from '@/lib/merge';
+import { normalizeMessage } from '@/lib/message-metadata';
 import { queryKeys } from '@/lib/query-keys';
 import type { Message } from '@/lib/types';
 
 // Open-thread poll: one DB-backed read per tick on the server side.
-const MESSAGES_POLL_INTERVAL_MS = 5_000;
+const MESSAGES_POLL_INTERVAL_MS = 10_000;
 const PAGE_LIMIT = 100;
 
 interface MessagesResponse {
@@ -44,7 +45,7 @@ async function fetchMessagesPage({
     `/api/conversations/${encodeURIComponent(conversationId)}/messages?${params}`,
   );
   return {
-    messages: [...(body.messages ?? [])].reverse(),
+    messages: [...(body.messages ?? [])].map(normalizeMessage).reverse(),
     hasMore: body.pagination?.hasMore ?? false,
     nextCursor: body.pagination?.nextCursor ?? null,
   };

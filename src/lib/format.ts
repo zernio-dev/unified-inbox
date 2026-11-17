@@ -24,9 +24,19 @@ export function formatRelativeTime(iso: string, now: Date = new Date()): string 
   return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+export function formatMessageText(text?: string | null): string {
+  if (!text) return '';
+  const trimmed = text.trim();
+  if (trimmed === '[reaction]') return '❤️ Reação';
+  if (trimmed === '[sticker]') return '🎨 Figurinha';
+  if (trimmed === '[audio]') return '🎤 Áudio';
+  if (trimmed === '[Unsupported message]') return '💬 Mídia/Conteúdo';
+  return text;
+}
+
 export function messagePreviewText(m: Pick<Message, 'message' | 'attachments'>): string {
   const text = (m.message ?? '').trim();
-  if (text) return text;
+  if (text) return formatMessageText(text);
   const first = m.attachments?.[0];
   if (first) {
     if (first.type === 'audio') return '🎤 Voice message';

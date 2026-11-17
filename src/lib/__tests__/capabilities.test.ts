@@ -62,8 +62,10 @@ describe('platform constants', () => {
 });
 
 describe('isWhatsApp', () => {
-  it('true only for whatsapp', () => {
+  it('true only for whatsapp variants', () => {
     expect(isWhatsApp('whatsapp')).toBe(true);
+    expect(isWhatsApp('WHATSAPP')).toBe(true);
+    expect(isWhatsApp('whatsapp_baileys')).toBe(true);
     expect(isWhatsApp('telegram')).toBe(false);
     expect(isWhatsApp('facebook')).toBe(false);
   });

@@ -22,4 +22,5 @@ export const MESSAGE_PLATFORMS: Platform[] = [
 
 export const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
-export const isWhatsApp = (p: Platform) => p === 'whatsapp';
+export const isWhatsApp = (p: Platform | string) => Boolean(p && p.toLowerCase().includes('whatsapp'));
+

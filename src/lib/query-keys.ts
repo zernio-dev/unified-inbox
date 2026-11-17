@@ -7,4 +7,6 @@ export const queryKeys = {
   templates: (accountId: string) => ['whatsapp-templates', accountId] as const,
   flows: (accountId: string) => ['whatsapp-flows', accountId] as const,
   settings: ['settings'] as const,
+  quickReplies: (profileId: string) => ['quick-replies', profileId] as const,
 };
+

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   dateSeparatorLabel,
+  formatMessageText,
   formatPhonePretty,
   formatRelativeTime,
   initials,
@@ -37,6 +38,28 @@ describe('formatRelativeTime', () => {
 
   it('more than 7 days ago -> short month format', () => {
     expect(formatRelativeTime(new Date('2026-03-01T09:00:00').toISOString(), now)).toBe('Mar 1');
+  });
+});
+
+describe('formatMessageText', () => {
+  it('formats [reaction] to ❤️ Reação', () => {
+    expect(formatMessageText('[reaction]')).toBe('❤️ Reação');
+  });
+
+  it('formats [sticker] to 🎨 Figurinha', () => {
+    expect(formatMessageText('[sticker]')).toBe('🎨 Figurinha');
+  });
+
+  it('formats [audio] to 🎤 Áudio', () => {
+    expect(formatMessageText('[audio]')).toBe('🎤 Áudio');
+  });
+
+  it('formats [Unsupported message] to 💬 Mídia/Conteúdo', () => {
+    expect(formatMessageText('[Unsupported message]')).toBe('💬 Mídia/Conteúdo');
+  });
+
+  it('returns plain text as is', () => {
+    expect(formatMessageText('Olá tudo bem')).toBe('Olá tudo bem');
   });
 });
 
